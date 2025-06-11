@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2021 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-# 
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
 #
@@ -31,9 +31,10 @@
 import torch
 from .base_storage import BaseStorage
 
+
 class RolloutStorage(BaseStorage):
-    """ A standard rollout storage, implemented for for PPO.
-    """
+    """A standard rollout storage, implemented for for PPO."""
+
     class Transition:
         def __init__(self):
             self.observations = None
@@ -49,7 +50,15 @@ class RolloutStorage(BaseStorage):
         def clear(self):
             self.__init__()
 
-    def __init__(self, num_envs, num_transitions_per_env, num_obs, num_critic_obs, num_actions, device='cpu'):
+    def __init__(
+        self,
+        num_envs,
+        num_transitions_per_env,
+        num_obs,
+        num_critic_obs,
+        num_actions,
+        device="cpu",
+    ):
 
         self.device = device
 
@@ -58,23 +67,45 @@ class RolloutStorage(BaseStorage):
         self.num_actions = num_actions
 
         # Core
-        self.observations = torch.zeros(num_transitions_per_env, num_envs, num_obs, device=self.device)
+        self.observations = torch.zeros(
+            num_transitions_per_env, num_envs, num_obs, device=self.device
+        )
         if num_critic_obs is not None:
-            self.critic_observations = torch.zeros(num_transitions_per_env, num_envs, num_critic_obs, device=self.device)
+            self.critic_observations = torch.zeros(
+                num_transitions_per_env, num_envs, num_critic_obs, device=self.device
+            )
         else:
             self.critic_observations = None
-        
-        self.rewards = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device)
-        self.actions = torch.zeros(num_transitions_per_env, num_envs, num_actions, device=self.device)
-        self.dones = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device).byte()
+
+        self.rewards = torch.zeros(
+            num_transitions_per_env, num_envs, 1, device=self.device
+        )
+        self.actions = torch.zeros(
+            num_transitions_per_env, num_envs, num_actions, device=self.device
+        )
+        self.dones = torch.zeros(
+            num_transitions_per_env, num_envs, 1, device=self.device
+        ).byte()
 
         # For PPO
-        self.actions_log_prob = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device)
-        self.values = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device)
-        self.returns = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device)
-        self.advantages = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device)
-        self.mu = torch.zeros(num_transitions_per_env, num_envs, num_actions, device=self.device)
-        self.sigma = torch.zeros(num_transitions_per_env, num_envs, num_actions, device=self.device)
+        self.actions_log_prob = torch.zeros(
+            num_transitions_per_env, num_envs, 1, device=self.device
+        )
+        self.values = torch.zeros(
+            num_transitions_per_env, num_envs, 1, device=self.device
+        )
+        self.returns = torch.zeros(
+            num_transitions_per_env, num_envs, 1, device=self.device
+        )
+        self.advantages = torch.zeros(
+            num_transitions_per_env, num_envs, 1, device=self.device
+        )
+        self.mu = torch.zeros(
+            num_transitions_per_env, num_envs, num_actions, device=self.device
+        )
+        self.sigma = torch.zeros(
+            num_transitions_per_env, num_envs, num_actions, device=self.device
+        )
 
         self.num_transitions_per_env = num_transitions_per_env
         self.num_envs = num_envs
@@ -85,13 +116,17 @@ class RolloutStorage(BaseStorage):
         if self.fill_count >= self.num_transitions_per_env:
             raise AssertionError("Rollout buffer overflow")
         self.observations[self.fill_count].copy_(transition.observations)
-        if self.critic_observations is not None: 
-            self.critic_observations[self.fill_count].copy_(transition.critic_observations)
+        if self.critic_observations is not None:
+            self.critic_observations[self.fill_count].copy_(
+                transition.critic_observations
+            )
         self.actions[self.fill_count].copy_(transition.actions)
         self.rewards[self.fill_count].copy_(transition.rewards.view(-1, 1))
         self.dones[self.fill_count].copy_(transition.dones.view(-1, 1))
         self.values[self.fill_count].copy_(transition.values)
-        self.actions_log_prob[self.fill_count].copy_(transition.actions_log_prob.view(-1, 1))
+        self.actions_log_prob[self.fill_count].copy_(
+            transition.actions_log_prob.view(-1, 1)
+        )
         self.mu[self.fill_count].copy_(transition.action_mean)
         self.sigma[self.fill_count].copy_(transition.action_sigma)
         self.fill_count += 1
@@ -107,26 +142,39 @@ class RolloutStorage(BaseStorage):
             else:
                 next_values = self.values[step + 1]
             next_is_not_terminal = 1.0 - self.dones[step].float()
-            delta = self.rewards[step] + next_is_not_terminal * gamma * next_values - self.values[step]
+            delta = (
+                self.rewards[step]
+                + next_is_not_terminal * gamma * next_values
+                - self.values[step]
+            )
             advantage = delta + next_is_not_terminal * gamma * lam * advantage
             self.returns[step] = advantage + self.values[step]
 
         # Compute and normalize the advantages
         self.advantages = self.returns - self.values
-        self.advantages = (self.advantages - self.advantages.mean()) / (self.advantages.std() + 1e-8)
+        self.advantages = (self.advantages - self.advantages.mean()) / (
+            self.advantages.std() + 1e-8
+        )
 
     def get_statistics(self):
         done = self.dones
         done[-1] = 1
         flat_dones = done.permute(1, 0, 2).reshape(-1, 1)
-        done_indices = torch.cat((flat_dones.new_tensor([-1], dtype=torch.int64), flat_dones.nonzero(as_tuple=False)[:, 0]))
-        trajectory_lengths = (done_indices[1:] - done_indices[:-1])
+        done_indices = torch.cat(
+            (
+                flat_dones.new_tensor([-1], dtype=torch.int64),
+                flat_dones.nonzero(as_tuple=False)[:, 0],
+            )
+        )
+        trajectory_lengths = done_indices[1:] - done_indices[:-1]
         return trajectory_lengths.float().mean(), self.rewards.mean()
 
     def mini_batch_generator(self, num_mini_batches, num_epochs=8):
         batch_size = self.num_envs * self.num_transitions_per_env
         mini_batch_size = batch_size // num_mini_batches
-        indices = torch.randperm(num_mini_batches*mini_batch_size, requires_grad=False, device=self.device)
+        indices = torch.randperm(
+            num_mini_batches * mini_batch_size, requires_grad=False, device=self.device
+        )
 
         observations = self.observations.flatten(0, 1)
         if self.critic_observations is not None:
@@ -145,8 +193,8 @@ class RolloutStorage(BaseStorage):
         for epoch in range(num_epochs):
             for i in range(num_mini_batches):
 
-                start = i*mini_batch_size
-                end = (i+1)*mini_batch_size
+                start = i * mini_batch_size
+                end = (i + 1) * mini_batch_size
                 batch_idx = indices[start:end]
 
                 obs_batch = observations[batch_idx]
@@ -158,5 +206,4 @@ class RolloutStorage(BaseStorage):
                 advantages_batch = advantages[batch_idx]
                 old_mu_batch = old_mu[batch_idx]
                 old_sigma_batch = old_sigma[batch_idx]
-                yield obs_batch, critic_observations_batch, actions_batch, target_values_batch, advantages_batch, returns_batch, \
-                       old_actions_log_prob_batch, old_mu_batch, old_sigma_batch
+                yield obs_batch, critic_observations_batch, actions_batch, target_values_batch, advantages_batch, returns_batch, old_actions_log_prob_batch, old_mu_batch, old_sigma_batch

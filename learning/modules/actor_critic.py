@@ -6,32 +6,40 @@ from .utils import create_MLP
 from .actor import Actor
 from .critic import Critic
 
+
 class ActorCritic(nn.Module):
-    def __init__(self, num_actor_obs,
-                       num_critic_obs,
-                       num_actions,
-                       actor_hidden_dims=[256, 256, 256],
-                       critic_hidden_dims=[256, 256, 256],
-                       activation="elu",
-                       init_noise_std=1.0,
-                       normalize_obs=False,
-                       **kwargs):
+    def __init__(
+        self,
+        num_actor_obs,
+        num_critic_obs,
+        num_actions,
+        actor_hidden_dims=[256, 256, 256],
+        critic_hidden_dims=[256, 256, 256],
+        activation="elu",
+        init_noise_std=1.0,
+        normalize_obs=False,
+        **kwargs,
+    ):
 
         if kwargs:
-            print("ActorCritic.__init__ got unexpected arguments, which will be ignored: " + str([key for key in kwargs.keys()]))
+            print(
+                "ActorCritic.__init__ got unexpected arguments, which will be ignored: "
+                + str([key for key in kwargs.keys()])
+            )
         super(ActorCritic, self).__init__()
 
-        self.actor = Actor(num_actor_obs,
-                           num_actions,
-                           actor_hidden_dims,
-                           activation,
-                           init_noise_std,
-                           normalize_obs)
+        self.actor = Actor(
+            num_actor_obs,
+            num_actions,
+            actor_hidden_dims,
+            activation,
+            init_noise_std,
+            normalize_obs,
+        )
 
-        self.critic = Critic(num_critic_obs,
-                             critic_hidden_dims,
-                             activation,
-                             normalize_obs)
+        self.critic = Critic(
+            num_critic_obs, critic_hidden_dims, activation, normalize_obs
+        )
 
         print(f"Actor MLP: {self.actor.mean_NN}")
         print(f"Critic MLP: {self.critic.NN}")
@@ -47,7 +55,7 @@ class ActorCritic(nn.Module):
     @property
     def entropy(self):
         return self.actor.entropy
-    
+
     @property
     def std(self):
         return self.actor.std

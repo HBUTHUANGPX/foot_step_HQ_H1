@@ -87,6 +87,20 @@ class H1Controller(LeggedRobot):
             device=self.device,
             requires_grad=False,
         )  # contacts on right & left sole
+        self.last_foot_contact = torch.zeros(
+            self.num_envs,
+            len(self.feet_ids),
+            dtype=torch.bool,
+            device=self.device,
+            requires_grad=False,
+        )
+        self.foot_air_time = torch.zeros(
+            self.num_envs,
+            len(self.feet_ids),
+            dtype=torch.float,
+            device=self.device,
+            requires_grad=False,
+        )
         self.ankle_vel_history = torch.zeros(
             self.num_envs,
             len(self.feet_ids),
@@ -300,7 +314,6 @@ class H1Controller(LeggedRobot):
             device=self.device,
         )
         self.full_step_period = 2 * self.step_period
-
         self.step_stance[env_ids] = torch.clone(self.step_period[env_ids])
 
         # * Randomly select the desired step width
@@ -401,6 +414,7 @@ class H1Controller(LeggedRobot):
         self.phase += 1 / self.full_step_period
 
         # * Ground truth foot contact
+        self.last_foot_contact = self.foot_contact.clone()
         self.foot_contact = torch.gt(self.contact_forces[:, self.feet_ids, 2], 0)
 
         # * Phase-based foot contact
@@ -1376,6 +1390,24 @@ class H1Controller(LeggedRobot):
         error = torch.norm(self.projected_gravity[:, :2], dim=1)
         return self._negsqrd_exp(error, a=0.2)
 
+    def _reward_base_roll(self):
+        # self.base_quat
+        threshold = 0.07
+        clipped = torch.clamp(torch.abs(self.base_euler[:, 0]) - threshold, 0)
+        # mask = torch.max(clipped,0)
+        mask = torch.gt(clipped, 0).int()
+        error = clipped + mask * threshold
+        return self._negsqrd_exp(error, a=0.2)
+
+    def _reward_base_pitch(self):
+        # self.base_quat
+        threshold = 0.08
+        clipped = torch.clamp(torch.abs(self.base_euler[:, 1]) - threshold, 0)
+        # mask = torch.max(clipped,0)
+        mask = torch.gt(clipped, 0).int()
+        error = clipped + mask * threshold
+        return self._negsqrd_exp(error, a=0.3)
+
     def _reward_tracking_lin_vel_world(self):
         # Reward tracking linear velocity command in world frame
         error = self.commands[:, :2] - self.root_states[:, 7:9]
@@ -1411,12 +1443,58 @@ class H1Controller(LeggedRobot):
         )
         return contact_rewards * tracking_rewards
 
+    def _reward_contact(self):
+        contact_rewards = (
+            self.foot_contact[:, 0].int() - self.foot_contact[:, 1].int()
+        ) * self.contact_schedule.squeeze(1)
+
+        return contact_rewards
+
+    def _reward_air_time(self, debug=False):
+        self.foot_air_time += self.dt * (1 - self.foot_contact.int())
+        air_mask = torch.gt(
+            (self.last_foot_contact.int() - self.foot_contact.int()), 0
+        )  # 找出腾空的时机点。 1-0=1 开始腾空
+        time_rew = torch.gt(self.foot_air_time - 0.9*self.dt * self.step_period, 0).int()
+        rew = torch.sum(
+            time_rew,
+            dim=1,
+        )
+        self.foot_air_time *= (
+            1 - self.foot_contact.int()
+        )  # 对于接触地面的脚的air_time进行清0
+        if debug:
+            return (
+                self.foot_contact,
+                self.foot_air_time - 0.9 * self.dt * self.step_period,
+                air_mask,
+                time_rew,
+                rew,
+            )
+        else:
+            return rew
+
+    def _reward_tracking(self):
+        k = 3.0
+        a = 1.0
+        tracking_rewards = k * self._neg_exp(
+            self.step_location_offset[~self.foot_on_motion], a=a
+        )
+        return tracking_rewards
+
     # ##################### HELPER FUNCTIONS ################################## #
 
     def smooth_sqr_wave(self, phase):
         p = 2.0 * torch.pi * phase
         eps = 0.2
         return torch.sin(p) / torch.sqrt(torch.sin(p) ** 2.0 + eps**2.0)
+
+    def get_euler_xyz_tensor(self, quat):
+        r, p, w = get_euler_xyz(quat)
+        # stack r, p, w in dim1
+        euler_xyz = torch.stack((r, p, w), dim=1)
+        euler_xyz[euler_xyz > np.pi] -= 2 * np.pi
+        return euler_xyz
 
 
 """ Code Explanation

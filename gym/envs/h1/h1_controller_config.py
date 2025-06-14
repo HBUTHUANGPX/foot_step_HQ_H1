@@ -165,7 +165,7 @@ class H1ControllerCfg(LeggedRobotCfg):
 
         class ranges(LeggedRobotCfg.commands.ranges):
             # TRAINING STEP COMMAND RANGES #
-            sample_period = [35, 36]  # [20, 21] # equal to gait frequency
+            sample_period = [17, 18]  # [20, 21] # equal to gait frequency
             dstep_width = [0.3, 0.3]  # [0.2, 0.4] # min max [m]
 
             lin_vel_x = [-3.0, 3.0]  # min max [m/s]
@@ -235,7 +235,8 @@ class H1ControllerCfg(LeggedRobotCfg):
         apply_humanoid_jacobian = True  # True, False
 
     class rewards(LeggedRobotCfg.rewards):
-        base_height_target = 1.0243
+        base_height_target = 1.0243-0.05
+        base_height_range = 0.05 *2
         soft_dof_pos_limit = 0.9
         soft_dof_vel_limit = 0.9
         soft_torque_limit = 0.8
@@ -248,7 +249,7 @@ class H1ControllerCfg(LeggedRobotCfg):
         class weights(LeggedRobotCfg.rewards.weights):
             # * Regularization rewards * #
             actuation_rate = 1e-3
-            actuation_rate2 = 1e-4
+            actuation_rate2 = 5e-3
             torques = 1e-4
             dof_vel = 1e-3
             lin_vel_z = 1e-1
@@ -259,13 +260,17 @@ class H1ControllerCfg(LeggedRobotCfg):
             # * Floating base rewards * #
             base_height = 0.1
             base_heading = 3.0
-            base_z_orientation = 1.0
+            # base_z_orientation = 1.0
             tracking_lin_vel_world = 4.0
+            base_roll = 1.0
+            base_pitch = 1.0
 
             # * Stepping rewards * #
             joint_regularization = 1.0
-            contact_schedule = 3.0
-
+            contact_schedule = 5.0
+            # contact = 1.0
+            tracking = 1.0
+            air_time = 1.0
         class termination_weights(LeggedRobotCfg.rewards.termination_weights):
             termination = 1.0
 
@@ -284,51 +289,6 @@ class H1ControllerCfg(LeggedRobotCfg):
         commands = 1.0
         clip_actions = 10.0
 
-    class obs:
-        actor_obs = [
-            "base_heading",
-            "base_ang_vel",
-            "projected_gravity",
-            "commands",
-            "phase_sin",
-            "phase_cos",
-            "dof_pos",
-            "dof_vel",
-        ]
-
-        critic_obs = [
-            "base_height",
-            "base_lin_vel_world",  # "base_lin_vel",
-            "base_heading",
-            "base_ang_vel",
-            "projected_gravity",
-            "foot_states_right",
-            "foot_states_left",
-            "step_commands_right",
-            "step_commands_left",
-            "commands",
-            "phase_sin",
-            "phase_cos",
-            "dof_pos",
-            "dof_vel",
-        ]
-
-        class noise:
-            base_height = 0.05
-            base_lin_vel = 0.05
-            base_lin_vel_world = 0.05
-            base_heading = 0.01
-            base_ang_vel = 0.05
-            projected_gravity = 0.05
-            foot_states_right = 0.01
-            foot_states_left = 0.01
-            step_commands_right = 0.05
-            step_commands_left = 0.05
-            commands = 0.1
-            dof_pos = 0.05
-            dof_vel = 0.5
-            foot_contact = 0.1
-
 
 class H1ControllerRunnerCfg(LeggedRobotRunnerCfg):
     do_wandb = True
@@ -336,19 +296,22 @@ class H1ControllerRunnerCfg(LeggedRobotRunnerCfg):
 
     class policy(LeggedRobotRunnerCfg.policy):
         init_noise_std = 1.0
-        actor_hidden_dims = [512, 256, 256]
-        critic_hidden_dims = [512, 256, 256]
+        actor_hidden_dims = [256,64]
+        critic_hidden_dims = [256,64]
         # (elu, relu, selu, crelu, lrelu, tanh, sigmoid)
-        activation = "elu"
-        normalize_obs = True  # True, False
+        activation = "tanh"
+        normalize_obs = False  # True, False
 
+        rnn_type = 'lstm'
+        rnn_hidden_size = 64
+        rnn_num_layers = 1
         actor_obs = [
             "base_heading",
             "base_ang_vel",
             "projected_gravity",
             "commands",
-            "phase_sin",
-            "phase_cos",
+            # "phase_sin",
+            # "phase_cos",
             "dof_pos",
             "dof_vel",
         ]
@@ -360,6 +323,7 @@ class H1ControllerRunnerCfg(LeggedRobotRunnerCfg):
             "foot_states_left",
             "step_commands_right",
             "step_commands_left",
+            "foot_air_time",
         ]
 
         actions = ["dof_pos_target"]
@@ -397,12 +361,13 @@ class H1ControllerRunnerCfg(LeggedRobotRunnerCfg):
             max_grad_norm = 1.0
 
     class runner(LeggedRobotRunnerCfg.runner):
-        policy_class_name = "ActorCritic"
+        # policy_class_name = "ActorCritic"
+        policy_class_name = "ActorCriticRecurrent"
         algorithm_class_name = "PPO"
         num_steps_per_env = 24
         max_iterations = 5000
         run_name = "HQ"
-        experiment_name = "U_H1"
+        experiment_name = "U_H1_R"
         save_interval = 100
         plot_input_gradients = False
         plot_parameter_gradients = False

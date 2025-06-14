@@ -127,6 +127,7 @@ class LeggedRobot(BaseTask):
         # prepare quantities
         self.base_pos[:] = self.root_states[:, 0:3]
         self.base_quat[:] = self.root_states[:, 3:7]
+        self.base_euler[:] = self.get_euler_xyz_tensor(self.base_quat)
         self.base_lin_vel[:] = quat_rotate_inverse(
             self.base_quat, self.root_states[:, 7:10]
         )
@@ -661,6 +662,7 @@ class LeggedRobot(BaseTask):
         self.dof_vel = self.dof_state.view(self.num_envs, self.num_dof, 2)[..., 1]
         self.base_pos = self.root_states[:, 0:3]
         self.base_quat = self.root_states[:, 3:7]
+        self.base_euler = self.get_euler_xyz_tensor(self.base_quat)
         self.contact_forces = gymtorch.wrap_tensor(net_contact_forces).view(
             self.num_envs, -1, 3
         )  # shape: num_envs, num_bodies, xyz axis

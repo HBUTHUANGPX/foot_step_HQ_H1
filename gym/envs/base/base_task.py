@@ -42,6 +42,7 @@ from gym.utils import BaseKeyboardInterface
 
 # Base class for RL tasks
 class BaseTask:
+    cfg: Union[LeggedRobotCfg, FixedRobotCfg]
 
     def __init__(
         self,
@@ -86,7 +87,6 @@ class BaseTask:
         self.timed_out = torch.zeros(
             self.num_envs, device=self.device, dtype=torch.bool
         )
-
         self.extras = {}
 
         # create envs, sim and viewer
@@ -214,6 +214,8 @@ class BaseTask:
 
     def compute_reward(self):
         for name in self.reward_names:
+            # print(name)
+            # print(self.eval_reward(name).size())
             rew = self.reward_weights[name] * self.eval_reward(name)
             self.rew_buf += rew
             self.episode_sums[name] += rew

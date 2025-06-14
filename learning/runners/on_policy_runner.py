@@ -37,9 +37,10 @@ import wandb
 import torch
 
 from learning.algorithms import PPO
-from learning.modules import ActorCritic
+from learning.modules import ActorCritic, ActorCriticRecurrent
 from learning.utils import Logger
 from learning.env import VecEnv
+from typing import Tuple, Union
 
 
 class OnPolicyRunner:
@@ -59,7 +60,8 @@ class OnPolicyRunner:
         self.obs_noise_vec = self.get_obs_noise_vec(
             self.policy_cfg["actor_obs"], self.policy_cfg["noise"]
         )
-        actor_critic = ActorCritic(
+        actor_critic_class = eval(self.cfg["policy_class_name"])  # ActorCritic
+        actor_critic: Union[ActorCritic, ActorCriticRecurrent] = actor_critic_class(
             self.num_actor_obs, self.num_critic_obs, self.num_actions, **self.policy_cfg
         ).to(self.device)
 

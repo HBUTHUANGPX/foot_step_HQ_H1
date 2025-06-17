@@ -179,7 +179,7 @@ def get_args():
         
         {"name": "--wandb_project", "type": str, "default": "foot_step", "help":
             "Enter the name of your project for better WandB tracking."},
-        {"name": "--wandb_entity", "type": str, "default": "2082672018-hpx", "help":
+        {"name": "--wandb_entity", "type": str, "default": "", "help":
             "Enter your wandb entity username to track your experiment on your account."},
         {"name": "--wandb_sweep_id", "type": str, "help":
             "Enter a WandB sweep ID to continue an existing sweep."},

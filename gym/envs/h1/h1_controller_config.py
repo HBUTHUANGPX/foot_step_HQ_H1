@@ -257,7 +257,7 @@ class H1ControllerCfg(LeggedRobotCfg):
 
             # * Floating base rewards * #
             base_height = 0.1
-            # base_heading = 3.0
+            base_heading = 3.0
             # base_z_orientation = 1.0
             tracking_lin_vel_world = 4.0
             base_yaw_vel = 1.0
@@ -270,6 +270,7 @@ class H1ControllerCfg(LeggedRobotCfg):
             # contact = 1.0
             tracking = 4.0
             air_time = 1.0
+            hip_pos = 10.0
         class termination_weights(LeggedRobotCfg.rewards.termination_weights):
             termination = 1.0
 

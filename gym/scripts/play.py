@@ -210,10 +210,12 @@ def play(args):
             if (i + 1) == 500:
                 env.commands[:, 0] = 0.5
                 env.commands[:, 1] = 0.0
+                env.commands[:, 2] = 0.0
                 print("stage 1:",env.commands[0, 0])
             elif (i + 1) == 1000:
-                env.commands[:, 0] = 1.0
+                env.commands[:, 0] = 0.0
                 env.commands[:, 1] = 0.0
+                env.commands[:, 2] = 0.5
                 print("stage 2:",env.commands[0, 0])
         foot_contact, foot_air_time, air_mask,time_rew, rew = env._reward_air_time(
             debug=True

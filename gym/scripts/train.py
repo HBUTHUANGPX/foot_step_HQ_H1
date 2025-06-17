@@ -63,4 +63,5 @@ def train(args):
 
 if __name__ == '__main__':
     args = get_args()
+    args.wandb_entity = "2082672018-hpx"
     train(args)

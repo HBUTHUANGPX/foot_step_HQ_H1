@@ -785,12 +785,12 @@ class H1Controller(LeggedRobot):
         CoM = self.CoM[update_commands_ids]
         T = step_period * self.dt
         w = self.w[update_commands_ids]
-        # dstep_length = torch.norm(commands[:, :2], dim=1, keepdim=True) * T
-        # dstep_width = self.dstep_width[update_commands_ids]
-        # theta = torch.atan2(commands[:, 1:2], commands[:, 0:1])
-        dstep_length = commands[:, 0:1] * T
-        dstep_width = self.dstep_width[update_commands_ids]#(commands[:, 1:2] * T).clip(-0.3,0.3)
-        theta = self.base_euler[update_commands_ids, 2:3] + commands[:, 2:3] * T
+        dstep_length = torch.norm(commands[:, :2], dim=1, keepdim=True) * T
+        dstep_width = self.dstep_width[update_commands_ids]
+        theta = torch.atan2(commands[:, 1:2], commands[:, 0:1])
+        # dstep_length = commands[:, 0:1] * T
+        # dstep_width = self.dstep_width[update_commands_ids]#(commands[:, 1:2] * T).clip(-0.3,0.3)
+        # theta = self.base_euler[update_commands_ids, 2:3] + commands[:, 2:3] * T
 
         _theta = theta.clone()  # 创建副本以避免原地修改
         _theta[theta > torch.pi] -= 2 * torch.pi
@@ -1451,10 +1451,6 @@ class H1Controller(LeggedRobot):
 
         return error / 4
 
-    def _reawrd_contact_sequence_schedule(self):
-        # self.foot_contact_sequence 包含了三个指定周期的
-
-        return 
     def _reward_contact_schedule(self):
         """Alternate right and left foot contacts
         First, right foot contacts (left foot swing), then left foot contacts (right foot swing)
@@ -1507,6 +1503,9 @@ class H1Controller(LeggedRobot):
             self.step_location_offset[~self.foot_on_motion], a=a
         )
         return tracking_rewards
+
+    def _reward_hip_pos(self):
+        return -torch.sum(torch.square(self.dof_pos[:,[0,2,6,8]]), dim=1)
 
     # ##################### HELPER FUNCTIONS ################################## #
 

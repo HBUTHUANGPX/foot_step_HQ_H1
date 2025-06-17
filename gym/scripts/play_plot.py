@@ -118,9 +118,8 @@ def play(args):
     env_cfg.commands.sample_angle_offset = 20
     env_cfg.commands.sample_radius_offset = 0.05  # 0.05
 
-    env_cfg.commands.ranges.sample_period = [35, 36]  # [20, 21], [35, 36]
     env_cfg.commands.ranges.dstep_width = [0.3, 0.3]
-    env_cfg.asset.fix_base_link = True
+    # env_cfg.asset.fix_base_link = True
     # * prepare environment
     env, _ = task_registry.make_env(name=args.task, args=args, env_cfg=env_cfg)
 
@@ -185,15 +184,14 @@ def play(args):
     scale = 0.2
     for i in range(max_it):
         actions = policy_runner.get_inference_actions()
-        actions *= 0
-        # print(actions.size(),env.phase.size())
-        p = env.phase[:,0]
-        actions[:, 1] = torch.sin(2.0 * torch.pi * p) * scale
-        actions[:, 3] = -2 * torch.sin(2.0 * torch.pi * p) * scale
-        actions[:, 4] = torch.sin(2.0 * torch.pi * p) * scale
-        actions[:, 1 + 6] = -torch.sin(2.0 * torch.pi * p) * scale
-        actions[:, 3 + 6] = 2 * torch.sin(2.0 * torch.pi * p) * scale
-        actions[:, 4 + 6] = -torch.sin(2.0 * torch.pi * p) * scale
+        # actions *= 0
+        # p = env.phase[:,0]
+        # actions[:, 1] = torch.sin(2.0 * torch.pi * p) * scale
+        # actions[:, 3] = -2 * torch.sin(2.0 * torch.pi * p) * scale
+        # actions[:, 4] = torch.sin(2.0 * torch.pi * p) * scale
+        # actions[:, 1 + 6] = -torch.sin(2.0 * torch.pi * p) * scale
+        # actions[:, 3 + 6] = 2 * torch.sin(2.0 * torch.pi * p) * scale
+        # actions[:, 4 + 6] = -torch.sin(2.0 * torch.pi * p) * scale
         policy_runner.set_actions(actions)
         env.step()
         policy_runner.reset_envs()

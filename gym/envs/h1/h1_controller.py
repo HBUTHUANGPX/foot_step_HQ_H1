@@ -86,7 +86,15 @@ class H1Controller(LeggedRobot):
             dtype=torch.bool,
             device=self.device,
             requires_grad=False,
-        )  # contacts on right & left sole
+        )  
+        self.foot_contact_sequence = torch.zeros(
+            self.num_envs,
+            len(self.feet_ids), #0.02*17=0.34
+            (self.cfg.commands.ranges.sample_period[1]*2+1)*3,
+            dtype=torch.bool,
+            device=self.device,
+            requires_grad=False,
+        )  
         self.last_foot_contact = torch.zeros(
             self.num_envs,
             len(self.feet_ids),
@@ -416,7 +424,9 @@ class H1Controller(LeggedRobot):
         # * Ground truth foot contact
         self.last_foot_contact = self.foot_contact.clone()
         self.foot_contact = torch.gt(self.contact_forces[:, self.feet_ids, 2], 0)
-
+        self.foot_contact_sequence = torch.roll(self.foot_contact_sequence, shifts=1, dims=-1)
+        # 将最新的 foot_contact 插入到最前方（索引 0）
+        self.foot_contact_sequence[:, :, 0] = self.foot_contact
         # * Phase-based foot contact
         self.contact_schedule = self.smooth_sqr_wave(self.phase)
 
@@ -775,9 +785,16 @@ class H1Controller(LeggedRobot):
         CoM = self.CoM[update_commands_ids]
         T = step_period * self.dt
         w = self.w[update_commands_ids]
-        dstep_length = torch.norm(commands[:, :2], dim=1, keepdim=True) * T
-        dstep_width = self.dstep_width[update_commands_ids]
-        theta = torch.atan2(commands[:, 1:2], commands[:, 0:1])
+        # dstep_length = torch.norm(commands[:, :2], dim=1, keepdim=True) * T
+        # dstep_width = self.dstep_width[update_commands_ids]
+        # theta = torch.atan2(commands[:, 1:2], commands[:, 0:1])
+        dstep_length = commands[:, 0:1] * T
+        dstep_width = self.dstep_width[update_commands_ids]#(commands[:, 1:2] * T).clip(-0.3,0.3)
+        theta = self.base_euler[update_commands_ids, 2:3] + commands[:, 2:3] * T
+
+        _theta = theta.clone()  # 创建副本以避免原地修改
+        _theta[theta > torch.pi] -= 2 * torch.pi
+        _theta[theta < -torch.pi] += 2 * torch.pi
 
         right_step_ids = torch.where(torch.where(foot_on_motion)[1] == 0)[0]
         left_step_ids = torch.where(torch.where(foot_on_motion)[1] == 1)[0]
@@ -793,20 +810,20 @@ class H1Controller(LeggedRobot):
 
         # * For logging purpose * #
         rright_foot_pos_x = (
-            torch.cos(theta) * current_step[:, 0, 0:1]
-            + torch.sin(theta) * current_step[:, 0, 1:2]
+            torch.cos(_theta) * current_step[:, 0, 0:1]
+            + torch.sin(_theta) * current_step[:, 0, 1:2]
         )
         rright_foot_pos_y = (
-            -torch.sin(theta) * current_step[:, 0, 0:1]
-            + torch.cos(theta) * current_step[:, 0, 1:2]
+            -torch.sin(_theta) * current_step[:, 0, 0:1]
+            + torch.cos(_theta) * current_step[:, 0, 1:2]
         )
         rleft_foot_pos_x = (
-            torch.cos(theta) * current_step[:, 1, 0:1]
-            + torch.sin(theta) * current_step[:, 1, 1:2]
+            torch.cos(_theta) * current_step[:, 1, 0:1]
+            + torch.sin(_theta) * current_step[:, 1, 1:2]
         )
         rleft_foot_pos_y = (
-            -torch.sin(theta) * current_step[:, 1, 0:1]
-            + torch.cos(theta) * current_step[:, 1, 1:2]
+            -torch.sin(_theta) * current_step[:, 1, 0:1]
+            + torch.cos(_theta) * current_step[:, 1, 1:2]
         )
 
         self.step_length[update_commands_ids] = torch.abs(
@@ -834,14 +851,14 @@ class H1Controller(LeggedRobot):
         vy_0 = root_states[:, 8:9]
 
         x_f = x_0 * torch.cosh(T * w) + vx_0 * torch.sinh(T * w) / w
-        vx_f = x_0 * w * torch.sinh(T * w) + vx_0 * torch.cosh(T * w)
+        vx_f = x_0 * torch.sinh(T * w) + vx_0 * torch.cosh(T * w) / w
         y_f = y_0 * torch.cosh(T * w) + vy_0 * torch.sinh(T * w) / w
-        vy_f = y_0 * w * torch.sinh(T * w) + vy_0 * torch.cosh(T * w)
+        vy_f = y_0 * torch.sinh(T * w) + vy_0 * torch.cosh(T * w) / w
 
         x_f_world = x_f + support_foot_pos[:, 0:1]
         y_f_world = y_f + support_foot_pos[:, 1:2]
-        eICP_x = x_f_world + vx_f / w
-        eICP_y = y_f_world + vy_f / w
+        eICP_x = x_f_world + vx_f
+        eICP_y = y_f_world + vy_f
         b_x = dstep_length / (torch.exp(T * w) - 1)
         b_y = dstep_width / (torch.exp(T * w) + 1)
 
@@ -850,18 +867,18 @@ class H1Controller(LeggedRobot):
         original_offset_y[left_step_ids] = b_y[left_step_ids]
 
         offset_x = (
-            torch.cos(theta) * original_offset_x - torch.sin(theta) * original_offset_y
+            torch.cos(_theta) * original_offset_x - torch.sin(_theta) * original_offset_y
         )
         offset_y = (
-            torch.sin(theta) * original_offset_x + torch.cos(theta) * original_offset_y
+            torch.sin(_theta) * original_offset_x + torch.cos(_theta) * original_offset_y
         )
 
-        u_x = eICP_x + offset_x
-        u_y = eICP_y + offset_y
+        u_x:Tensor = eICP_x + offset_x
+        u_y:Tensor = eICP_y + offset_y
 
-        random_step_command[:, 0] = u_x.squeeze(1)
-        random_step_command[:, 1] = u_y.squeeze(1)
-        random_step_command[:, 2] = theta.squeeze(1)
+        random_step_command[:, 0] = u_x.squeeze(1)#.clip(max=0.5)
+        random_step_command[:, 1] = u_y.squeeze(1)#.clip(max=0.5)
+        random_step_command[:, 2] = _theta.squeeze(1)
 
         return random_step_command
 
@@ -1385,6 +1402,11 @@ class H1Controller(LeggedRobot):
 
         return self._neg_exp(base_heading_error, a=torch.pi / 2)
 
+    def _reward_base_yaw_vel(self):
+        error = self.commands[:, 2:3] - self.root_states[:, 9:10]
+        error *= 1.0 / (1.0 + torch.abs(self.commands[:, 2:3]))
+        return self._negsqrd_exp(error, a=1.0).sum(dim=1)
+
     def _reward_base_z_orientation(self):
         """Reward tracking upright orientation"""
         error = torch.norm(self.projected_gravity[:, :2], dim=1)
@@ -1429,6 +1451,10 @@ class H1Controller(LeggedRobot):
 
         return error / 4
 
+    def _reawrd_contact_sequence_schedule(self):
+        # self.foot_contact_sequence 包含了三个指定周期的
+
+        return 
     def _reward_contact_schedule(self):
         """Alternate right and left foot contacts
         First, right foot contacts (left foot swing), then left foot contacts (right foot swing)
@@ -1455,7 +1481,7 @@ class H1Controller(LeggedRobot):
         air_mask = torch.gt(
             (self.last_foot_contact.int() - self.foot_contact.int()), 0
         )  # 找出腾空的时机点。 1-0=1 开始腾空
-        time_rew = torch.gt(self.foot_air_time - 0.9*self.dt * self.step_period, 0).int()
+        time_rew = torch.gt(self.foot_air_time - 0.9*self.dt * self.step_period*2, 0).int()
         rew = torch.sum(
             time_rew,
             dim=1,

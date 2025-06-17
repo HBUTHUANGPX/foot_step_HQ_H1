@@ -118,7 +118,6 @@ def play(args):
     env_cfg.commands.sample_angle_offset = 20
     env_cfg.commands.sample_radius_offset = 0.05  # 0.05
 
-    env_cfg.commands.ranges.sample_period = [35, 36]  # [20, 21], [35, 36]
     env_cfg.commands.ranges.dstep_width = [0.3, 0.3]
     # env_cfg.asset.fix_base_link = True
     # * prepare environment
@@ -183,6 +182,7 @@ def play(args):
     plot_thread.daemon = True
     # plot_thread.start()
     scale = 0.2
+    env.commands[:, :] = 0
     for i in range(max_it):
         actions = policy_runner.get_inference_actions()
         # actions *= 0
@@ -210,9 +210,11 @@ def play(args):
             if (i + 1) == 500:
                 env.commands[:, 0] = 0.5
                 env.commands[:, 1] = 0.0
+                print("stage 1:",env.commands[0, 0])
             elif (i + 1) == 1000:
                 env.commands[:, 0] = 1.0
                 env.commands[:, 1] = 0.0
+                print("stage 2:",env.commands[0, 0])
         foot_contact, foot_air_time, air_mask,time_rew, rew = env._reward_air_time(
             debug=True
         )

@@ -121,9 +121,12 @@ class BaseTask:
 
     def get_state(self, name):
         if name in self.scales.keys():
-            return getattr(self, name) * self.scales[name]
+            obs = getattr(self, name) * self.scales[name]
         else:
-            return getattr(self, name)
+            obs = getattr(self, name)
+        if torch.isnan(obs).any():
+            print("this tensor has nan: ",name)
+        return obs
 
     def set_states(self, state_list, values):
         idx = 0

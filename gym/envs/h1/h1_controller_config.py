@@ -165,14 +165,13 @@ class H1ControllerCfg(LeggedRobotCfg):
 
         class ranges(LeggedRobotCfg.commands.ranges):
             # TRAINING STEP COMMAND RANGES #
-            sample_period = [17, 18]  # [20, 21] # equal to gait frequency
-            dstep_width = [0.3, 0.3]  # [0.2, 0.4] # min max [m]
+            sample_period = [14, 15]  # [20, 21] # equal to gait frequency
+            dstep_width = [0.326, 0.326]  # [0.2, 0.4] # min max [m]
 
-            lin_vel_x = [-3.0, 3.0]  # min max [m/s]
-            lin_vel_y = 1.5  # min max [m/s]
-            lin_vel_x = [-2.0, 2.0]  # [-3.0, 3.0] # min max [m/s]
-            lin_vel_y = 2.0  # 1.5   # min max [m/s]
-            yaw_vel = 0.0  # min max [rad/s]
+            lin_vel_x = [-1.0, 1.0]  # [-3.0, 3.0] # min max [m/s]
+            lin_vel_y = 0.  # 1.5   # min max [m/s]
+            # yaw_vel = 0.0  # min max [rad/s]
+            yaw_vel = 1.0  # min max [rad/s]
 
     class domain_rand(LeggedRobotCfg.domain_rand):
         randomize_friction = True  # True, False
@@ -235,8 +234,7 @@ class H1ControllerCfg(LeggedRobotCfg):
         apply_humanoid_jacobian = True  # True, False
 
     class rewards(LeggedRobotCfg.rewards):
-        base_height_target = 1.0243-0.05
-        base_height_range = 0.05 *2
+        base_height_target = 1.0243
         soft_dof_pos_limit = 0.9
         soft_dof_vel_limit = 0.9
         soft_torque_limit = 0.8
@@ -248,8 +246,8 @@ class H1ControllerCfg(LeggedRobotCfg):
 
         class weights(LeggedRobotCfg.rewards.weights):
             # * Regularization rewards * #
-            actuation_rate = 1e-3
-            actuation_rate2 = 5e-3
+            actuation_rate = 1e-2
+            actuation_rate2 = 1e-2
             torques = 1e-4
             dof_vel = 1e-3
             lin_vel_z = 1e-1
@@ -259,17 +257,18 @@ class H1ControllerCfg(LeggedRobotCfg):
 
             # * Floating base rewards * #
             base_height = 0.1
-            base_heading = 3.0
+            # base_heading = 3.0
             # base_z_orientation = 1.0
             tracking_lin_vel_world = 4.0
-            base_roll = 1.0
-            base_pitch = 1.0
+            base_yaw_vel = 1.0
+            base_roll = 5.0
+            base_pitch = 5.0
 
             # * Stepping rewards * #
             joint_regularization = 1.0
-            contact_schedule = 5.0
+            contact_schedule = 7.0
             # contact = 1.0
-            tracking = 1.0
+            tracking = 4.0
             air_time = 1.0
         class termination_weights(LeggedRobotCfg.rewards.termination_weights):
             termination = 1.0
@@ -296,8 +295,8 @@ class H1ControllerRunnerCfg(LeggedRobotRunnerCfg):
 
     class policy(LeggedRobotRunnerCfg.policy):
         init_noise_std = 1.0
-        actor_hidden_dims = [256,64]
-        critic_hidden_dims = [256,64]
+        actor_hidden_dims = [1024,512,256,64]
+        critic_hidden_dims = [1024,512,256,64]
         # (elu, relu, selu, crelu, lrelu, tanh, sigmoid)
         activation = "tanh"
         normalize_obs = False  # True, False
@@ -310,20 +309,19 @@ class H1ControllerRunnerCfg(LeggedRobotRunnerCfg):
             "base_ang_vel",
             "projected_gravity",
             "commands",
-            # "phase_sin",
-            # "phase_cos",
+            "phase_sin",
+            "phase_cos",
             "dof_pos",
             "dof_vel",
+            "foot_states_right",
+            "foot_states_left",
         ]
 
         critic_obs = actor_obs + [
             "base_height",
             "base_lin_vel_world",
-            "foot_states_right",
-            "foot_states_left",
             "step_commands_right",
             "step_commands_left",
-            "foot_air_time",
         ]
 
         actions = ["dof_pos_target"]

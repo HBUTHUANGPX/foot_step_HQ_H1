@@ -86,15 +86,15 @@ class H1Controller(LeggedRobot):
             dtype=torch.bool,
             device=self.device,
             requires_grad=False,
-        )  
+        )
         self.foot_contact_sequence = torch.zeros(
             self.num_envs,
-            len(self.feet_ids), #0.02*17=0.34
-            (self.cfg.commands.ranges.sample_period[1]*2+1)*3,
+            len(self.feet_ids),  # 0.02*17=0.34
+            (self.cfg.commands.ranges.sample_period[1] * 2 + 1) * 3,
             dtype=torch.bool,
             device=self.device,
             requires_grad=False,
-        )  
+        )
         self.last_foot_contact = torch.zeros(
             self.num_envs,
             len(self.feet_ids),
@@ -162,7 +162,7 @@ class H1Controller(LeggedRobot):
         )  # (right & left foot) x (x, y, heading) wrt base x,y-coordinate
 
         # * Step states
-        self.current_step = torch.zeros(
+        self.c_s = torch.zeros(
             self.num_envs,
             len(self.feet_ids),
             3,
@@ -352,9 +352,9 @@ class H1Controller(LeggedRobot):
         self.foot_on_motion[env_ids, 1] = True  # When resample, left feet is swing foot
 
         # * Step states
-        self.current_step[env_ids] = torch.clone(
+        self.c_s[env_ids] = torch.clone(
             self.step_commands[env_ids]
-        )  # current_step initializatoin
+        )  # c_s initializatoin
         self.prev_step_commands[env_ids] = torch.clone(self.step_commands[env_ids])
         self.semi_succeed_step[env_ids] = False
         self.succeed_step[env_ids] = False
@@ -424,17 +424,19 @@ class H1Controller(LeggedRobot):
         # * Ground truth foot contact
         self.last_foot_contact = self.foot_contact.clone()
         self.foot_contact = torch.gt(self.contact_forces[:, self.feet_ids, 2], 0)
-        self.foot_contact_sequence = torch.roll(self.foot_contact_sequence, shifts=1, dims=-1)
+        self.foot_contact_sequence = torch.roll(
+            self.foot_contact_sequence, shifts=1, dims=-1
+        )
         # 将最新的 foot_contact 插入到最前方（索引 0）
         self.foot_contact_sequence[:, :, 0] = self.foot_contact
         # * Phase-based foot contact
         self.contact_schedule = self.smooth_sqr_wave(self.phase)
 
         # * Update current step
-        current_step_masked = self.current_step[self.foot_contact]
+        current_step_masked = self.c_s[self.foot_contact]
         current_step_masked[:, :2] = self.foot_states[self.foot_contact][:, :2]
         current_step_masked[:, 2] = self.foot_heading[self.foot_contact]
-        self.current_step[self.foot_contact] = current_step_masked
+        self.c_s[self.foot_contact] = current_step_masked
 
         naxis = 3
         self.ankle_vel_history[:, 0, naxis:] = self.ankle_vel_history[:, 0, :naxis]
@@ -608,9 +610,7 @@ class H1Controller(LeggedRobot):
         step_command_mask = update_step_commands_mask[
             self.foot_on_motion[update_commands_ids]
         ]
-        support_step_masked = self.current_step[~self.foot_on_motion][
-            update_commands_ids
-        ]
+        support_step_masked = self.c_s[~self.foot_on_motion][update_commands_ids]
 
         # * Height points in world frame
         height_points = quat_apply_yaw(
@@ -780,59 +780,57 @@ class H1Controller(LeggedRobot):
         """
         foot_on_motion = self.foot_on_motion[update_commands_ids]
         step_period = self.step_period[update_commands_ids]
-        commands = self.commands[update_commands_ids]
-        current_step = self.current_step[update_commands_ids]
+        commands_base = self.commands[update_commands_ids]
+        batch_size = commands_base.shape[0]
+        zero_column = torch.zeros(batch_size, 1, device=commands_base.device)
+        commands = quat_rotate(  # 得到速度指令在世界系下的数据
+            self.base_quat[update_commands_ids],
+            torch.cat(
+                (
+                    commands_base[:, :2],
+                    zero_column,
+                ),
+                dim=-1,
+            ),
+        )
+        base_heading = self.base_heading[update_commands_ids]
+        c_s = self.c_s[update_commands_ids]  # current step
         CoM = self.CoM[update_commands_ids]
         T = step_period * self.dt
         w = self.w[update_commands_ids]
         dstep_length = torch.norm(commands[:, :2], dim=1, keepdim=True) * T
         dstep_width = self.dstep_width[update_commands_ids]
-        theta = torch.atan2(commands[:, 1:2], commands[:, 0:1])
-        # dstep_length = commands[:, 0:1] * T
-        # dstep_width = self.dstep_width[update_commands_ids]#(commands[:, 1:2] * T).clip(-0.3,0.3)
-        # theta = self.base_euler[update_commands_ids, 2:3] + commands[:, 2:3] * T
+        theta = torch.atan2(commands[:, 1:2], commands[:, 0:1]) # theta是足端期望的朝向,将会与base_heading作差计算
 
-        _theta = theta.clone()  # 创建副本以避免原地修改
-        _theta[theta > torch.pi] -= 2 * torch.pi
-        _theta[theta < -torch.pi] += 2 * torch.pi
+        c_t = torch.cos(theta)
+        s_t = torch.sin(theta)
 
         right_step_ids = torch.where(torch.where(foot_on_motion)[1] == 0)[0]
         left_step_ids = torch.where(torch.where(foot_on_motion)[1] == 1)[0]
 
         root_states = self.root_states[update_commands_ids]
         support_foot_pos = self.support_foot_pos[update_commands_ids]
-        support_foot_pos[right_step_ids] = current_step[
+        support_foot_pos[right_step_ids] = c_s[
             right_step_ids, 1, :3
         ]  # Left foot(=1) is support foot
-        support_foot_pos[left_step_ids] = current_step[
+        support_foot_pos[left_step_ids] = c_s[
             left_step_ids, 0, :3
         ]  # Right foot(=0) is support foot
 
         # * For logging purpose * #
-        rright_foot_pos_x = (
-            torch.cos(_theta) * current_step[:, 0, 0:1]
-            + torch.sin(_theta) * current_step[:, 0, 1:2]
-        )
-        rright_foot_pos_y = (
-            -torch.sin(_theta) * current_step[:, 0, 0:1]
-            + torch.cos(_theta) * current_step[:, 0, 1:2]
-        )
-        rleft_foot_pos_x = (
-            torch.cos(_theta) * current_step[:, 1, 0:1]
-            + torch.sin(_theta) * current_step[:, 1, 1:2]
-        )
-        rleft_foot_pos_y = (
-            -torch.sin(_theta) * current_step[:, 1, 0:1]
-            + torch.cos(_theta) * current_step[:, 1, 1:2]
-        )
+        if 0:
+            rright_foot_pos_x = c_t * c_s[:, 0, 0:1] + s_t * c_s[:, 0, 1:2]
+            rright_foot_pos_y = -s_t * c_s[:, 0, 0:1] + c_t * c_s[:, 0, 1:2]
+            rleft_foot_pos_x = c_t * c_s[:, 1, 0:1] + s_t * c_s[:, 1, 1:2]
+            rleft_foot_pos_y = -s_t * c_s[:, 1, 0:1] + c_t * c_s[:, 1, 1:2]
 
-        self.step_length[update_commands_ids] = torch.abs(
-            rright_foot_pos_x - rleft_foot_pos_x
-        )
-        self.step_width[update_commands_ids] = torch.abs(
-            rright_foot_pos_y - rleft_foot_pos_y
-        )
-
+            self.step_length[update_commands_ids] = torch.abs(
+                rright_foot_pos_x - rleft_foot_pos_x
+            )
+            self.step_width[update_commands_ids] = torch.abs(
+                rright_foot_pos_y - rleft_foot_pos_y
+            )
+        
         self.dstep_length[update_commands_ids] = dstep_length
         self.dstep_width[update_commands_ids] = dstep_width
         # * #################### * #
@@ -851,118 +849,13 @@ class H1Controller(LeggedRobot):
         vy_0 = root_states[:, 8:9]
 
         x_f = x_0 * torch.cosh(T * w) + vx_0 * torch.sinh(T * w) / w
-        vx_f = x_0 * torch.sinh(T * w) + vx_0 * torch.cosh(T * w) / w
+        vx_f = x_0 * torch.sinh(T * w) * w + vx_0 * torch.cosh(T * w)
         y_f = y_0 * torch.cosh(T * w) + vy_0 * torch.sinh(T * w) / w
-        vy_f = y_0 * torch.sinh(T * w) + vy_0 * torch.cosh(T * w) / w
+        vy_f = y_0 * torch.sinh(T * w) * w + vy_0 * torch.cosh(T * w)
 
         x_f_world = x_f + support_foot_pos[:, 0:1]
         y_f_world = y_f + support_foot_pos[:, 1:2]
-        eICP_x = x_f_world + vx_f
-        eICP_y = y_f_world + vy_f
-        b_x = dstep_length / (torch.exp(T * w) - 1)
-        b_y = dstep_width / (torch.exp(T * w) + 1)
-
-        original_offset_x = -b_x
-        original_offset_y = -b_y
-        original_offset_y[left_step_ids] = b_y[left_step_ids]
-
-        offset_x = (
-            torch.cos(_theta) * original_offset_x - torch.sin(_theta) * original_offset_y
-        )
-        offset_y = (
-            torch.sin(_theta) * original_offset_x + torch.cos(_theta) * original_offset_y
-        )
-
-        u_x:Tensor = eICP_x + offset_x
-        u_y:Tensor = eICP_y + offset_y
-
-        random_step_command[:, 0] = u_x.squeeze(1)#.clip(max=0.5)
-        random_step_command[:, 1] = u_y.squeeze(1)#.clip(max=0.5)
-        random_step_command[:, 2] = _theta.squeeze(1)
-
-        return random_step_command
-
-    def _generate_dynamic_step_command_by_3DLIPM_XCoM(self, update_commands_ids):
-        """Generate random step command by step command based on the XCoM paper
-        x_0, y_0 : CoM position w.r.t support foot pos
-        vx_0, vy_0 : CoM velocity
-        We are assuming that the robot is always facing forward i.e. base_lin_vel is always (vx, 0, 0)
-        """
-        foot_on_motion = self.foot_on_motion[update_commands_ids]
-        step_period = self.step_period[update_commands_ids]
-        update_count = self.update_count[update_commands_ids]
-        commands = self.commands[update_commands_ids]
-        current_step = self.current_step[update_commands_ids]
-        CoM = self.CoM[update_commands_ids]
-        T = (
-            step_period - update_count.unsqueeze(1)
-        ) * self.dt  # Remaining time to reach the step command
-        w = self.w[update_commands_ids]
-        dstep_length = torch.norm(commands[:, :2], dim=1, keepdim=True) * T
-        dstep_width = self.cfg.commands.dstep_width * T / (step_period * self.dt)
-        theta = torch.atan2(commands[:, 1:2], commands[:, 0:1])
-
-        right_step_ids = torch.where(torch.where(foot_on_motion)[1] == 0)[0]
-        left_step_ids = torch.where(torch.where(foot_on_motion)[1] == 1)[0]
-
-        root_states = self.root_states[update_commands_ids]
-        support_foot_pos = self.support_foot_pos[update_commands_ids]
-        support_foot_pos[right_step_ids] = current_step[
-            right_step_ids, 1, :3
-        ]  # Left foot(=1) is support foot
-        support_foot_pos[left_step_ids] = current_step[
-            left_step_ids, 0, :3
-        ]  # Right foot(=0) is support foot
-
-        # * For logging purpose * #
-        rright_foot_pos_x = (
-            torch.cos(theta) * current_step[:, 0, 0:1]
-            + torch.sin(theta) * current_step[:, 0, 1:2]
-        )
-        rright_foot_pos_y = (
-            -torch.sin(theta) * current_step[:, 0, 0:1]
-            + torch.cos(theta) * current_step[:, 0, 1:2]
-        )
-        rleft_foot_pos_x = (
-            torch.cos(theta) * current_step[:, 1, 0:1]
-            + torch.sin(theta) * current_step[:, 1, 1:2]
-        )
-        rleft_foot_pos_y = (
-            -torch.sin(theta) * current_step[:, 1, 0:1]
-            + torch.cos(theta) * current_step[:, 1, 1:2]
-        )
-
-        self.step_length[update_commands_ids] = torch.abs(
-            rright_foot_pos_x - rleft_foot_pos_x
-        )
-        self.step_width[update_commands_ids] = torch.abs(
-            rright_foot_pos_y - rleft_foot_pos_y
-        )
-
-        self.dstep_length[update_commands_ids] = dstep_length
-        self.dstep_width[update_commands_ids] = dstep_width
-        # * #################### * #
-
-        random_step_command = torch.zeros(
-            foot_on_motion.sum(),
-            3,
-            dtype=torch.float,
-            device=self.device,
-            requires_grad=False,
-        )
-
-        x_0 = CoM[:, 0:1] - support_foot_pos[:, 0:1]
-        y_0 = CoM[:, 1:2] - support_foot_pos[:, 1:2]
-        vx_0 = root_states[:, 7:8]
-        vy_0 = root_states[:, 8:9]
-
-        x_f = x_0 * torch.cosh(T * w) + vx_0 * torch.sinh(T * w) / w
-        vx_f = x_0 * w * torch.sinh(T * w) + vx_0 * torch.cosh(T * w)
-        y_f = y_0 * torch.cosh(T * w) + vy_0 * torch.sinh(T * w) / w
-        vy_f = y_0 * w * torch.sinh(T * w) + vy_0 * torch.cosh(T * w)
-
-        x_f_world = x_f + support_foot_pos[:, 0:1]
-        y_f_world = y_f + support_foot_pos[:, 1:2]
+        # eICP计算的是LIPM下摆的下一周期的状态，也就是预期瞬时捕获点的x 和 y 分量
         eICP_x = x_f_world + vx_f / w
         eICP_y = y_f_world + vy_f / w
         b_x = dstep_length / (torch.exp(T * w) - 1)
@@ -972,19 +865,15 @@ class H1Controller(LeggedRobot):
         original_offset_y = -b_y
         original_offset_y[left_step_ids] = b_y[left_step_ids]
 
-        offset_x = (
-            torch.cos(theta) * original_offset_x - torch.sin(theta) * original_offset_y
-        )
-        offset_y = (
-            torch.sin(theta) * original_offset_x + torch.cos(theta) * original_offset_y
-        )
+        offset_x = c_t * original_offset_x - s_t * original_offset_y
+        offset_y = s_t * original_offset_x + c_t * original_offset_y
 
-        u_x = eICP_x + offset_x
-        u_y = eICP_y + offset_y
+        u_x: Tensor = eICP_x + offset_x
+        u_y: Tensor = eICP_y + offset_y
 
-        random_step_command[:, 0] = u_x.squeeze(1)
-        random_step_command[:, 1] = u_y.squeeze(1)
-        random_step_command[:, 2] = theta.squeeze(1)
+        random_step_command[:, 0] = u_x.squeeze(1)  # .clip(max=0.5)
+        random_step_command[:, 1] = u_y.squeeze(1)  # .clip(max=0.5)
+        random_step_command[:, 2] = (base_heading+commands[:, 2:3] * T).squeeze(1)
 
         return random_step_command
 
@@ -1000,10 +889,10 @@ class H1Controller(LeggedRobot):
         left_step_ids = torch.where(torch.where(self.foot_on_motion)[1] == 1)[0]
 
         support_foot_pos = self.support_foot_pos.clone()
-        support_foot_pos[right_step_ids] = self.current_step[
+        support_foot_pos[right_step_ids] = self.c_s[
             right_step_ids, 1, :3
         ]  # Left foot(=1) is support foot
-        support_foot_pos[left_step_ids] = self.current_step[
+        support_foot_pos[left_step_ids] = self.c_s[
             left_step_ids, 0, :3
         ]  # Right foot(=0) is support foot
 
@@ -1114,10 +1003,10 @@ class H1Controller(LeggedRobot):
             - self.base_pos,
         )
         self.step_commands_right[:, 3] = wrap_to_pi(
-            self.step_commands[:, 0, 2] - self.base_heading.squeeze(1)
+            self.step_commands[:, 0, 2]
         )
         self.step_commands_left[:, 3] = wrap_to_pi(
-            self.step_commands[:, 1, 2] - self.base_heading.squeeze(1)
+            self.step_commands[:, 1, 2]
         )
 
         self.phase_sin = torch.sin(2 * torch.pi * self.phase)
@@ -1352,10 +1241,10 @@ class H1Controller(LeggedRobot):
         """Draws current foot steps for humanoid"""
         for i in range(self.num_envs):
             right_foot_step = FootStepGeometry(
-                self.current_step[i, 0, :2], self.current_step[i, 0, 2], color=(1, 0, 1)
+                self.c_s[i, 0, :2], self.c_s[i, 0, 2], color=(1, 0, 1)
             )  # Right foot: Pink
             left_foot_step = FootStepGeometry(
-                self.current_step[i, 1, :2], self.current_step[i, 1, 2], color=(0, 1, 1)
+                self.c_s[i, 1, :2], self.c_s[i, 1, 2], color=(0, 1, 1)
             )  # Left foot: Cyan
             gymutil.draw_lines(
                 left_foot_step, self.gym, self.viewer, self.envs[i], pose=None
@@ -1436,6 +1325,10 @@ class H1Controller(LeggedRobot):
         error *= 1.0 / (1.0 + torch.abs(self.commands[:, :2]))
         return self._negsqrd_exp(error, a=1.0).sum(dim=1)
 
+    def _reward_tracking_lin_vel(self):
+        error = self.commands[:, :2] - self.base_lin_vel[:, :2]
+        error *= 1.0 / (1.0 + torch.abs(self.commands[:, :2]))
+        return self._negsqrd_exp(error, a=1.0).sum(dim=1)/2
     # * Stepping Rewards * #
 
     def _reward_joint_regularization(self):
@@ -1477,7 +1370,9 @@ class H1Controller(LeggedRobot):
         air_mask = torch.gt(
             (self.last_foot_contact.int() - self.foot_contact.int()), 0
         )  # 找出腾空的时机点。 1-0=1 开始腾空
-        time_rew = torch.gt(self.foot_air_time - 0.9*self.dt * self.step_period*2, 0).int()
+        time_rew = torch.gt(
+            self.foot_air_time - 0.9 * self.dt * self.step_period * 2, 0
+        ).int()
         rew = torch.sum(
             time_rew,
             dim=1,
@@ -1505,7 +1400,7 @@ class H1Controller(LeggedRobot):
         return tracking_rewards
 
     def _reward_hip_pos(self):
-        return -torch.sum(torch.square(self.dof_pos[:,[0,2,6,8]]), dim=1)
+        return -torch.sum(torch.square(self.dof_pos[:, [0, 2, 6, 8]]), dim=1)
 
     # ##################### HELPER FUNCTIONS ################################## #
 

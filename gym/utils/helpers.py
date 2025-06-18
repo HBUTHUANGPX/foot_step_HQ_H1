@@ -100,7 +100,7 @@ def parse_sim_params(args, cfg):
 
     return sim_params
 
-def get_load_path(root, load_run=-1, checkpoint=-1):
+def get_load_path(root, load_run=-1, checkpoint=-1,play_flag=False):
     try:
         runs = sorted(os.listdir(root),
                         key=lambda x: os.path.getctime(os.path.join(root, x)))
@@ -126,7 +126,11 @@ def get_load_path(root, load_run=-1, checkpoint=-1):
         model = "model_{}.pt".format(checkpoint) 
 
     load_path = os.path.join(load_run, model)
-    return load_path
+    if play_flag:
+        return load_path,load_run,model
+
+    else:
+        return load_path
 
 def update_cfg_from_args(env_cfg, train_cfg, args):
     # seed

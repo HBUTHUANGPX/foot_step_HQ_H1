@@ -169,7 +169,7 @@ class H1ControllerCfg(LeggedRobotCfg):
             dstep_width = [0.326, 0.326]  # [0.2, 0.4] # min max [m]
 
             lin_vel_x = [-1.0, 1.0]  # [-3.0, 3.0] # min max [m/s]
-            lin_vel_y = 0.  # 1.5   # min max [m/s]
+            lin_vel_y = 0.5  # 1.5   # min max [m/s]
             # yaw_vel = 0.0  # min max [rad/s]
             yaw_vel = 1.0  # min max [rad/s]
 
@@ -257,10 +257,11 @@ class H1ControllerCfg(LeggedRobotCfg):
 
             # * Floating base rewards * #
             base_height = 0.1
-            base_heading = 3.0
+            # base_heading = 3.0
             # base_z_orientation = 1.0
-            tracking_lin_vel_world = 4.0
-            base_yaw_vel = 1.0
+            # tracking_lin_vel_world = 4.0
+            tracking_lin_vel = 4.0
+            base_yaw_vel = 3.0
             base_roll = 5.0
             base_pitch = 5.0
 

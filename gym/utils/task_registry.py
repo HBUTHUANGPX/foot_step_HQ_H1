@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2021 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-# 
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
 #
@@ -37,17 +37,31 @@ from learning.runners import OnPolicyRunner
 from learning.env import VecEnv
 
 from gym import LEGGED_GYM_ROOT_DIR, LEGGED_GYM_ENVS_DIR
-from .helpers import get_args, update_cfg_from_args, class_to_dict, get_load_path, set_seed, parse_sim_params
+from .helpers import (
+    get_args,
+    update_cfg_from_args,
+    class_to_dict,
+    get_load_path,
+    set_seed,
+    parse_sim_params,
+)
 from gym.envs.base.legged_robot_config import LeggedRobotCfg, LeggedRobotRunnerCfg
 from gym.envs.base.base_config import BaseConfig
 
-class TaskRegistry():
+
+class TaskRegistry:
     def __init__(self):
         self.task_classes = {}
         self.env_cfgs = {}
         self.train_cfgs = {}
 
-    def register(self, name: str, task_class: VecEnv, env_cfg: BaseConfig, train_cfg: LeggedRobotRunnerCfg):
+    def register(
+        self,
+        name: str,
+        task_class: VecEnv,
+        env_cfg: BaseConfig,
+        train_cfg: LeggedRobotRunnerCfg,
+    ):
         self.task_classes[name] = task_class
         self.env_cfgs[name] = env_cfg
         self.train_cfgs[name] = train_cfg
@@ -74,33 +88,53 @@ class TaskRegistry():
         env_cfg = self.env_cfgs[name]
         train_cfg = self.train_cfgs[name]
 
-        dir_root_path = os.path.join(LEGGED_GYM_ROOT_DIR, 'logs', train_cfg.runner.experiment_name)
-        
+        dir_root_path = os.path.join(
+            LEGGED_GYM_ROOT_DIR, "logs", train_cfg.runner.experiment_name
+        )
+
         if args.load_run:
             load_run = args.load_run
         else:
-            runs = sorted(os.listdir(dir_root_path), key=lambda x: os.path.getctime(os.path.join(dir_root_path, x)))
-                        
-            if 'exported' in runs: runs.remove('exported')
-            if 'videos' in runs: runs.remove('videos')
-            if 'analysis' in runs: runs.remove('analysis')
-                
+            runs = sorted(
+                os.listdir(dir_root_path),
+                key=lambda x: os.path.getctime(os.path.join(dir_root_path, x)),
+            )
+
+            if "exported" in runs:
+                runs.remove("exported")
+            if "videos" in runs:
+                runs.remove("videos")
+            if "analysis" in runs:
+                runs.remove("analysis")
+
             load_run = os.path.join(dir_root_path, runs[-1])
 
-        file_root_path= os.path.join(dir_root_path, load_run, 'files')
-                           
-        task_class_module_path = os.path.join(file_root_path, task_class.__module__.replace('.', '/') + '.py')
-        spec = importlib.util.spec_from_file_location(task_class.__module__, task_class_module_path)
+        file_root_path = os.path.join(dir_root_path, load_run, "files")
+
+        task_class_module_path = os.path.join(
+            file_root_path, task_class.__module__.replace(".", "/") + ".py"
+        )
+        spec = importlib.util.spec_from_file_location(
+            task_class.__module__, task_class_module_path
+        )
         task_class_module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(task_class_module)
 
-        env_cfg_module_path = os.path.join(file_root_path, env_cfg.__module__.replace('.', '/') + '.py')
-        spec = importlib.util.spec_from_file_location(env_cfg.__module__, env_cfg_module_path)
+        env_cfg_module_path = os.path.join(
+            file_root_path, env_cfg.__module__.replace(".", "/") + ".py"
+        )
+        spec = importlib.util.spec_from_file_location(
+            env_cfg.__module__, env_cfg_module_path
+        )
         env_cfg_module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(env_cfg_module)
 
-        train_cfg_module_path = os.path.join(file_root_path, train_cfg.__module__.replace('.', '/') + '.py')
-        spec = importlib.util.spec_from_file_location(train_cfg.__module__, train_cfg_module_path)
+        train_cfg_module_path = os.path.join(
+            file_root_path, train_cfg.__module__.replace(".", "/") + ".py"
+        )
+        spec = importlib.util.spec_from_file_location(
+            train_cfg.__module__, train_cfg_module_path
+        )
         train_cfg_module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(train_cfg_module)
 
@@ -110,7 +144,7 @@ class TaskRegistry():
         self.train_cfgs[name] = getattr(train_cfg_module, train_cfg.__name__)
 
     def make_env(self, name, args=None, env_cfg=None) -> Tuple[VecEnv, LeggedRobotCfg]:
-        """ Creates an environment either from a registered namme or from the provided config file.
+        """Creates an environment either from a registered namme or from the provided config file.
 
         Args:
             name (string): Name of a registered env.
@@ -118,7 +152,7 @@ class TaskRegistry():
             env_cfg (Dict, optional): Environment config file used to override the registered config. Defaults to None.
 
         Raises:
-            ValueError: Error if no registered env corresponds to 'name' 
+            ValueError: Error if no registered env corresponds to 'name'
 
         Returns:
             isaacgym.VecTaskPython: The created environment
@@ -141,22 +175,32 @@ class TaskRegistry():
         # parse sim params (convert to dict first)
         sim_params = {"sim": class_to_dict(env_cfg.sim)}
         sim_params = parse_sim_params(args, sim_params)
-        env = task_class(   cfg=env_cfg,
-                            sim_params=sim_params,
-                            physics_engine=args.physics_engine,
-                            sim_device=args.sim_device,
-                            headless=args.headless)
+        env = task_class(
+            cfg=env_cfg,
+            sim_params=sim_params,
+            physics_engine=args.physics_engine,
+            sim_device=args.sim_device,
+            headless=args.headless,
+        )
         return env, env_cfg
 
-    def make_alg_runner(self, env, name=None, args=None, train_cfg=None, log_root="default") -> Tuple[Union[OnPolicyRunner], LeggedRobotRunnerCfg]:
-        """ Creates the training algorithm  either from a registered namme or from the provided config file.
+    def make_alg_runner(
+        self,
+        env,
+        name=None,
+        args=None,
+        train_cfg=None,
+        log_root="default",
+        play_flag=False,
+    ) -> Tuple[Union[OnPolicyRunner], LeggedRobotRunnerCfg]:
+        """Creates the training algorithm  either from a registered namme or from the provided config file.
 
         Args:
             env (isaacgym.VecTaskPython): The environment to train (TODO: remove from within the algorithm)
             name (string, optional): Name of a registered env. If None, the config file will be used instead. Defaults to None.
             args (Args, optional): Isaac Gym comand line arguments. If None get_args() will be called. Defaults to None.
             train_cfg (Dict, optional): Training config file. If None 'name' will be used to get the config file. Defaults to None.
-            log_root (str, optional): Logging directory for Tensorboard. Set to 'None' to avoid logging (at test time for example). 
+            log_root (str, optional): Logging directory for Tensorboard. Set to 'None' to avoid logging (at test time for example).
                                       Logs will be saved in <log_root>/<date_time>_<run_name>. Defaults to "default"=<path_to_LEGGED_GYM>/logs/<experiment_name>.
 
         Raises:
@@ -182,25 +226,48 @@ class TaskRegistry():
         # override cfg from args (if specified)
         _, train_cfg = update_cfg_from_args(None, train_cfg, args)
 
-        if log_root=="default":
-            log_root = os.path.join(LEGGED_GYM_ROOT_DIR, 'logs', train_cfg.runner.experiment_name)
-            log_dir = os.path.join(log_root, datetime.now().strftime('%b%d_%H-%M-%S') + '_' + train_cfg.runner.run_name)
+        if log_root == "default":
+            log_root = os.path.join(
+                LEGGED_GYM_ROOT_DIR, "logs", train_cfg.runner.experiment_name
+            )
+            log_dir = os.path.join(
+                log_root,
+                datetime.now().strftime("%b%d_%H-%M-%S")
+                + "_"
+                + train_cfg.runner.run_name,
+            )
         elif log_root is None:
             log_dir = None
         else:
-            log_dir = os.path.join(log_root, datetime.now().strftime('%b%d_%H-%M-%S') + '_' + train_cfg.runner.run_name)
-        
-        train_cfg_dict = class_to_dict(train_cfg)
-        runner: Union[OnPolicyRunner] = eval(train_cfg_dict["runner_class_name"])(env, train_cfg_dict, log_dir, device=args.rl_device)
+            log_dir = os.path.join(
+                log_root,
+                datetime.now().strftime("%b%d_%H-%M-%S")
+                + "_"
+                + train_cfg.runner.run_name,
+            )
 
-        #save resume path before creating a new log_dir
+        train_cfg_dict = class_to_dict(train_cfg)
+        runner: Union[OnPolicyRunner] = eval(train_cfg_dict["runner_class_name"])(
+            env, train_cfg_dict, log_dir, device=args.rl_device
+        )
+
+        # save resume path before creating a new log_dir
         resume = train_cfg.runner.resume
         if resume:
             # load previously trained model
-            resume_path = get_load_path(log_root, load_run=train_cfg.runner.load_run, checkpoint=train_cfg.runner.checkpoint)
+            resume_path, lr, ckp = get_load_path(
+                log_root,
+                load_run=train_cfg.runner.load_run,
+                checkpoint=train_cfg.runner.checkpoint,
+                play_flag=play_flag,
+            )
             print(f"Loading model from: {resume_path}")
             runner.load(resume_path)
-        return runner, train_cfg
+        if play_flag:
+            return runner, train_cfg, lr, ckp
+        else:
+            return runner, train_cfg
+
 
 # make global task registry
 task_registry = TaskRegistry()

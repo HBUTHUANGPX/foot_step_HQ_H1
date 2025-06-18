@@ -182,6 +182,9 @@ def play(args):
     plot_thread.daemon = True
     plot_thread.start()
     scale = 0.2
+    env.commands[:, 0] = 0
+    env.commands[:, 1] = 0
+    env.commands[:, 2] = 0
     for i in range(max_it):
         actions = policy_runner.get_inference_actions()
         # actions *= 0
@@ -204,13 +207,22 @@ def play(args):
 
         if CUSTOM_COMMANDS:
             # * Scenario 1 (For flat terrain)
-            env.commands[:, 0] = 0.1
             if (i + 1) == 500:
-                env.commands[:, 0] = 0.5
-                env.commands[:, 1] = 0.0
-            elif (i + 1) == 1000:
                 env.commands[:, 0] = 1.0
+                print("vx = ",env.commands[0, 0])
+            elif (i + 1) == 1000:
+                env.commands[:, 0] = -1.0
+                print("vx = ",env.commands[0, 0])
+            elif (i + 1) == 1500:
+                env.commands[:, 0] = 0.0
                 env.commands[:, 1] = 0.0
+                env.commands[:, 2] = 1.0
+                print("wz = ",env.commands[0, 2])
+            elif (i + 1) == 2000:
+                env.commands[:, 0] = 0.0
+                env.commands[:, 1] = 0.0
+                env.commands[:, 2] = -1.0
+                print("wz = ",env.commands[0, 2])
         foot_contact, foot_air_time, air_mask,time_rew, rew = env._reward_air_time(
             debug=True
         )

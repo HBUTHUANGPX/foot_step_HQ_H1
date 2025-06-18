@@ -1,39 +1,10 @@
-# SPDX-FileCopyrightText: Copyright (c) 2021 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: BSD-3-Clause
-#
-# Redistribution and use in source and binary forms, with or without
-# modification, are permitted provided that the following conditions are met:
-#
-# 1. Redistributions of source code must retain the above copyright notice, this
-# list of conditions and the following disclaimer.
-#
-# 2. Redistributions in binary form must reproduce the above copyright notice,
-# this list of conditions and the following disclaimer in the documentation
-# and/or other materials provided with the distribution.
-#
-# 3. Neither the name of the copyright holder nor the names of its
-# contributors may be used to endorse or promote products derived from
-# this software without specific prior written permission.
-#
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Copyright (c) 2021 ETH Zurich, Nikita Rudin
-
 from gym import LEGGED_GYM_ROOT_DIR
 import os
 import time
 from colorama import Fore
 
 import isaacgym
+from isaacgym import gymapi
 from gym.envs import *
 from gym.utils import (
     get_args,
@@ -47,7 +18,7 @@ from gym.utils import (
     SuccessRater,
 )
 from gym.scripts.plotting import LivePlotter
-
+from gym.envs import H1Controller
 import numpy as np
 import torch
 
@@ -55,6 +26,9 @@ import threading
 import queue
 import matplotlib.pyplot as plt
 import time
+import cv2
+from datetime import datetime
+from video_recorder import VideoRecorder
 
 data_queue = queue.Queue()
 plot_num = 9
@@ -86,6 +60,7 @@ def plot_data(data_queue):
 
 
 def play(args):
+    env: H1Controller
     env_cfg, train_cfg = task_registry.get_cfgs(args)
     env_cfg.env.num_envs = min(env_cfg.env.num_envs, 9)
     env_cfg.env.env_spacing = 2.0
@@ -125,8 +100,8 @@ def play(args):
 
     # * load policy
     train_cfg.runner.resume = True
-    policy_runner, train_cfg = task_registry.make_alg_runner(
-        env=env, name=args.task, args=args, train_cfg=train_cfg
+    policy_runner, train_cfg, load_run, ckp = task_registry.make_alg_runner(
+        env=env, name=args.task, args=args, train_cfg=train_cfg,play_flag=True
     )
     policy_runner.alg.actor_critic.eval()
 
@@ -156,27 +131,35 @@ def play(args):
         env, train_cfg.runner.experiment_name, policy_runner.log_dir
     )
 
-    if LIVE_PLOT:
-        live_plotter = LivePlotter(
-            log_states, log_commands, log_rewards, robot_index, joint_index, env.dt
+    if RENDER:
+        camera_properties = gymapi.CameraProperties()
+        camera_properties.width = 1920
+        camera_properties.height = 1080
+        h1 = env.gym.create_camera_sensor(env.envs[1], camera_properties)
+        camera_offset = gymapi.Vec3(1, -1, 0.5)
+        camera_rotation = gymapi.Quat.from_axis_angle(
+            gymapi.Vec3(-0.3, 0.2, 1), np.deg2rad(135)
         )
-    if RECORD_FRAMES:
-        recorder = AnalysisRecorder(
-            env, train_cfg.runner.experiment_name, policy_runner.log_dir
+        actor_handle = env.gym.get_actor_handle(env.envs[1], 0)
+        body_handle = env.gym.get_actor_rigid_body_handle(env.envs[1], actor_handle, 0)
+        env.gym.attach_camera_to_body(
+            h1,
+            env.envs[1],
+            body_handle,
+            gymapi.Transform(camera_offset, camera_rotation),
+            gymapi.FOLLOW_POSITION,
         )
-    if SAVE_CSV:
-        csv_logger = CSVLogger(
-            env, train_cfg.runner.experiment_name, policy_runner.log_dir, max_it
+        # 初始化视频录制器
+        print(load_run)
+        print("_{}".format(ckp))
+        video_recorder = VideoRecorder(
+            path=load_run+"/recordings",
+            tag=None,
+            video_name="video_{}".format(ckp),
+            fps=int(1 / env.dt),
+            compress=True,
         )
-    if SAVE_DICT:
-        dict_logger = DictLogger(
-            env, train_cfg.runner.experiment_name, policy_runner.log_dir, max_it
-        )
-    if CHECK_SUCCESS_RATE:
-        success_rater = SuccessRater(
-            env, train_cfg.runner.experiment_name, policy_runner.log_dir
-        )
-        test_episodes = 10000
+
     print("============start==============")
     plot_thread = threading.Thread(target=plot_data, args=(data_queue,))
     plot_thread.daemon = True
@@ -206,81 +189,42 @@ def play(args):
 
         if CUSTOM_COMMANDS:
             # * Scenario 1 (For flat terrain)
-            env.commands[:, 0] = 0.1
             if (i + 1) == 500:
-                env.commands[:, 0] = 0.5
-                env.commands[:, 1] = 0.0
-                env.commands[:, 2] = 0.0
-                print("stage 1:",env.commands[0, 0])
+                env.commands[:, 0] = 1.0
+                print("vx = ",env.commands[0, 0])
             elif (i + 1) == 1000:
+                env.commands[:, 0] = -1.0
+                print("vx = ",env.commands[0, 0])
+            elif (i + 1) == 1500:
                 env.commands[:, 0] = 0.0
                 env.commands[:, 1] = 0.0
-                env.commands[:, 2] = 0.5
-                print("stage 2:",env.commands[0, 0])
-        foot_contact, foot_air_time, air_mask,time_rew, rew = env._reward_air_time(
+                env.commands[:, 2] = 1.0
+                print("wz = ",env.commands[0, 2])
+            elif (i + 1) == 2000:
+                env.commands[:, 0] = 0.0
+                env.commands[:, 1] = 0.0
+                env.commands[:, 2] = -1.0
+                print("wz = ",env.commands[0, 2])
+        foot_contact, foot_air_time, air_mask, time_rew, rew = env._reward_air_time(
             debug=True
         )
         merged_tensor = torch.cat(
-            [foot_contact, foot_air_time, air_mask,time_rew, rew.unsqueeze(1)], dim=1
+            [foot_contact, foot_air_time, air_mask, time_rew, rew.unsqueeze(1)], dim=1
         )[0, :]
         data_queue.put(merged_tensor)
 
-        # if MOVE_CAMERA and not env.headless:
-        #     camera_position += camera_vel * env.dt
-        #     camera_position = default_camera_position + env.base_pos[robot_index].cpu().numpy()
-        #     env.set_camera(camera_position, camera_position + camera_direction)
+        if RENDER:
+            env.gym.fetch_results(env.sim, True)
+            env.gym.step_graphics(env.sim)
+            env.gym.render_all_camera_sensors(env.sim)
+            img = env.gym.get_camera_image(env.sim, env.envs[1], h1, gymapi.IMAGE_COLOR)
+            img = np.reshape(img, (1080, 1920, 4))
+            img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+            img_rgb = img[..., :3]  # 移除alpha通道，获取RGB图像
+            video_recorder(img_rgb)  # 录制当前帧
 
-        # if LIVE_PLOT:
-        #     live_plotter.log(
-        #         env.reset_buf[robot_index].item(),
-        #         env.manual_reset_flag,
-        #         states_dict = {
-        #             state: eval(f"env.{state}[{robot_index}]", {"env": env}) for state in log_states
-        #         },
-        #         commands_dict = {
-        #             command: eval(f"env.{command}[{robot_index}]", {"env": env}) for command in log_commands
-        #         },
-        #         rewards_dict = {
-        #             reward: eval(f"env.episode_sums['{reward}'][{robot_index}]", {"env": env}) for reward in log_rewards
-        #         },
-        #         extras_dict = {
-        #             'update_count': env.update_count[robot_index].item(),
-        #             'update_commands_ids': env.update_commands_ids[robot_index].item(),
-        #         }
-        #     )
-        #     live_plotter.plot()
-
-        # if RECORD_FRAMES:
-        #     image = env.gym.get_camera_image(env.sim, env.envs[0], env.camera_handle, isaacgym.gymapi.IMAGE_COLOR)
-        #     image = image.reshape(image.shape[0], -1, 4)[..., :3]
-        #     recorder.log(
-        #         image,
-        #         states_dict = {
-        #             state: eval(f"env.{state}[{robot_index}]", {"env": env}) for state in log_states
-        #         },
-        #         commands_dict = {
-        #             command: eval(f"env.{command}[{robot_index}]", {"env": env}) for command in log_commands
-        #         }
-        #     )
-        #     if env.record_done:
-        #         recorder.save_and_exit()
-
-        # if SAVE_CSV:
-        #     csv_logger.log()
-        #     if env.record_done:
-        #         csv_logger.save_and_exit()
-
-        # if SAVE_DICT:
-        #     dict_logger.log()
-        #     if env.record_done:
-        #         dict_logger.save_and_exit()
-
-        # if CHECK_SUCCESS_RATE:
-        #     if env.record_done:
-        #         stop = time.time()
-        #         print("collection_time:", stop - start)
-        #         success_rater.save_and_exit()
-        #     success_rater.log(i, test_episodes, env.reset_buf.sum().item(), env.timed_out.sum().item())
+    if RENDER:
+        video_recorder.stop()  # 停止录制并保存视频
 
 
 if __name__ == "__main__":
@@ -288,12 +232,12 @@ if __name__ == "__main__":
     CUSTOM_COMMANDS = True  # True, False
     MOVE_CAMERA = False  # True, False
     LIVE_PLOT = False  # True, False
-    RECORD_FRAMES = False  # True, False
+    RECORD_FRAMES = True  # True, False
     SAVE_CSV = False  # True, False
     SAVE_DICT = False  # True, False
     CHECK_SUCCESS_RATE = False  # True, False
     args = get_args()
-
+    RENDER = True
     # # * custom loading
     # args.load_files = True # True, False
     # args.load_run = 'Feb06_00-27-24_sf' # load run name

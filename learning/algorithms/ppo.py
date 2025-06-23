@@ -34,6 +34,7 @@ import torch.optim as optim
 
 from learning.modules import ActorCritic
 from learning.storage import RolloutStorage
+from learning.utils import unpad_trajectories
 
 
 class PPO:
@@ -55,6 +56,7 @@ class PPO:
         schedule="fixed",
         desired_kl=0.01,
         device="cpu",
+        symmetry_scale=1e-3,
     ):
 
         self.device = device
@@ -69,7 +71,8 @@ class PPO:
         self.storage = None  # initialized later
         self.optimizer = optim.Adam(self.actor_critic.parameters(), lr=learning_rate)
         self.transition = RolloutStorage.Transition()
-
+        # self.transition_sym = RolloutStorage.Transition()
+        self.symmetry_scale = symmetry_scale
         # PPO parameters
         self.clip_param = clip_param
         self.num_learning_epochs = num_learning_epochs
@@ -103,6 +106,8 @@ class PPO:
         # Compute the actions and values
         if self.actor_critic.is_recurrent:
             self.transition.hidden_states = self.actor_critic.get_hidden_states()
+            # self.transition_sym.hidden_states = self.actor_critic.get_hidden_states()
+
         self.transition.actions = self.actor_critic.act(obs).detach()
         self.transition.values = self.actor_critic.evaluate(critic_obs).detach()
         self.transition.actions_log_prob = self.actor_critic.get_actions_log_prob(
@@ -113,21 +118,42 @@ class PPO:
         # need to record obs and critic_obs before env.step()
         self.transition.observations = obs
         self.transition.critic_observations = critic_obs
+
+        # obs_sym = self.storage.obs_symmetry(obs, False)
+        # critic_obs_sym = self.storage.obs_symmetry(critic_obs, True)
+        # self.transition_sym.actions = self.actor_critic.act(obs_sym).detach()
+        # self.transition_sym.values = self.actor_critic.evaluate(critic_obs_sym).detach()
+        # self.transition_sym.actions_log_prob = self.actor_critic.get_actions_log_prob(
+        #     self.transition_sym.actions
+        # ).detach()
+        # self.transition_sym.action_mean = self.actor_critic.action_mean.detach()
+        # self.transition_sym.action_sigma = self.actor_critic.action_std.detach()
+        # self.transition_sym.observations = obs_sym
+        # self.transition_sym.critic_observations = critic_obs_sym
+
         return self.transition.actions
 
     def process_env_step(self, rewards, dones, timed_out=None):
         self.transition.rewards = rewards.clone()
         self.transition.dones = dones
 
+        # self.transition_sym.rewards = rewards.clone()
+        # self.transition_sym.dones = dones
+
         # Bootstrapping on time outs
         if timed_out is not None:
             self.transition.rewards += self.gamma * torch.squeeze(
                 self.transition.values * timed_out.unsqueeze(1), 1
             )
+            # self.transition_sym.rewards += self.gamma * torch.squeeze(
+            #     self.transition_sym.values * timed_out.unsqueeze(1), 1
+            # )
 
         # Record the transition
         self.storage.add_transitions(self.transition)
+        # self.storage.add_transitions(self.transition_sym)
         self.transition.clear()
+        # self.transition_sym.clear()
 
     def compute_returns(self, last_critic_obs):
         last_values = self.actor_critic.evaluate(last_critic_obs).detach()
@@ -136,6 +162,8 @@ class PPO:
     def update(self):
         mean_value_loss = 0
         mean_surrogate_loss = 0
+        mean_actor_sym_loss = 0
+        mean_critic_sym_loss = 0
         if self.actor_critic.is_recurrent:
             generator = self.storage.reccurent_mini_batch_generator(
                 self.num_mini_batches, self.num_learning_epochs
@@ -157,6 +185,25 @@ class PPO:
             hid_states_batch,
             masks_batch,
         ) in generator:
+
+            flip_obs_batch = self.storage.obs_symmetry(obs_batch, False)
+            # flip_obs_batch_unpad = unpad_trajectories(flip_obs_batch,masks_batch)
+            flip_critic_obs_batch = self.storage.obs_symmetry(critic_obs_batch, True)
+            flip_value_batch = self.actor_critic.evaluate(
+                flip_critic_obs_batch,
+                masks=masks_batch,
+                hidden_states=hid_states_batch[1],
+            ).detach()
+
+            action = self.actor_critic.act_inference(
+                obs_batch, masks_batch, hid_states_batch[0]
+            ).detach()
+            flip_obs2action_flip = self.storage.action_symmetry(
+                self.actor_critic.act_inference(
+                    flip_obs_batch, masks_batch, hid_states_batch[0]
+                )
+            ).detach()
+
             self.actor_critic.act(
                 obs_batch, masks=masks_batch, hidden_states=hid_states_batch[0]
             )
@@ -214,11 +261,22 @@ class PPO:
                 value_loss = torch.max(value_losses, value_losses_clipped).mean()
             else:
                 value_loss = (returns_batch - value_batch).pow(2).mean()
+            actor_sym_loss = self.symmetry_scale * torch.mean(
+                torch.sum(
+                    torch.square(action - flip_obs2action_flip),
+                    dim=-1,
+                )
+            )
+            critic_sym_loss = self.symmetry_scale * torch.mean(
+                torch.square(flip_value_batch.detach() - value_batch.detach())
+            )
 
             loss = (
                 surrogate_loss
                 + self.value_loss_coef * value_loss
                 - self.entropy_coef * entropy_batch.mean()
+                + actor_sym_loss
+                # + critic_sym_loss
             )
 
             # Gradient step
@@ -229,134 +287,19 @@ class PPO:
 
             mean_value_loss += value_loss.item()
             mean_surrogate_loss += surrogate_loss.item()
+            mean_actor_sym_loss += actor_sym_loss.item()
+            mean_critic_sym_loss += critic_sym_loss.item()
 
         num_updates = self.num_learning_epochs * self.num_mini_batches
         mean_value_loss /= num_updates
         mean_surrogate_loss /= num_updates
+        mean_actor_sym_loss /= num_updates
+        mean_critic_sym_loss /= num_updates
         self.storage.clear()
 
-        return mean_value_loss, mean_surrogate_loss
-
-    def obs_symmetry(self, tensor):
-        s_tensor = torch.zeros_like(tensor)
-        # base heading
-        s_tensor[..., 0] = -tensor[..., 0]
-        # base ang vel
-        s_tensor[..., 1] = -tensor[..., 1]
-        s_tensor[..., 2] = tensor[..., 2]
-        s_tensor[..., 3] = -tensor[..., 3]
-        # projected gravity
-        s_tensor[..., 4] = tensor[..., 4]
-        s_tensor[..., 5] = -tensor[..., 5]
-        s_tensor[..., 6] = tensor[..., 6]
-        # commands
-        s_tensor[..., 7] = tensor[..., 7]
-        s_tensor[..., 8] = -tensor[..., 8]
-        s_tensor[..., 9] = -tensor[..., 9]
-        # phase sin/cos
-        s_tensor[..., 10] = -tensor[..., 10]
-        s_tensor[..., 11] = -tensor[..., 11]
-        # dof pos
-        aa = 12
-        s_tensor[..., aa] = -tensor[..., aa + 6]
-        s_tensor[..., aa + 1] = tensor[..., aa + 7]
-        s_tensor[..., aa + 2] = -tensor[..., aa + 8]
-        s_tensor[..., aa + 3] = tensor[..., aa + 9]
-        s_tensor[..., aa + 4] = tensor[..., aa + 10]
-        s_tensor[..., aa + 5] = -tensor[..., aa + 11]
-
-        s_tensor[..., aa + 6] = -tensor[..., aa + 0]
-        s_tensor[..., aa + 7] = tensor[..., aa + 1]
-        s_tensor[..., aa + 8] = -tensor[..., aa + 2]
-        s_tensor[..., aa + 9] = tensor[..., aa + 3]
-        s_tensor[..., aa + 10] = tensor[..., aa + 4]
-        s_tensor[..., aa + 11] = -tensor[..., aa + 5]
-
-        # dof vel
-        aa += 12
-        s_tensor[..., aa] = -tensor[..., aa + 6]
-        s_tensor[..., aa + 1] = tensor[..., aa + 7]
-        s_tensor[..., aa + 2] = -tensor[..., aa + 8]
-        s_tensor[..., aa + 3] = tensor[..., aa + 9]
-        s_tensor[..., aa + 4] = tensor[..., aa + 10]
-        s_tensor[..., aa + 5] = -tensor[..., aa + 11]
-
-        s_tensor[..., aa + 6] = -tensor[..., aa + 0]
-        s_tensor[..., aa + 7] = tensor[..., aa + 1]
-        s_tensor[..., aa + 8] = -tensor[..., aa + 2]
-        s_tensor[..., aa + 9] = tensor[..., aa + 3]
-        s_tensor[..., aa + 10] = tensor[..., aa + 4]
-        s_tensor[..., aa + 11] = -tensor[..., aa + 5]
-
-    def critic_obs_symmetry(self, tensor):
-        s_tensor = torch.zeros_like(tensor)
-        # base heading
-        s_tensor[..., 0] = -tensor[..., 0]
-        # base ang vel
-        s_tensor[..., 1] = -tensor[..., 1]
-        s_tensor[..., 2] = tensor[..., 2]
-        s_tensor[..., 3] = -tensor[..., 3]
-        # projected gravity
-        s_tensor[..., 4] = tensor[..., 4]
-        s_tensor[..., 5] = -tensor[..., 5]
-        s_tensor[..., 6] = tensor[..., 6]
-        # commands
-        s_tensor[..., 7] = tensor[..., 7]
-        s_tensor[..., 8] = -tensor[..., 8]
-        s_tensor[..., 9] = -tensor[..., 9]
-        # phase sin/cos
-        s_tensor[..., 10] = -tensor[..., 10]
-        s_tensor[..., 11] = -tensor[..., 11]
-        # dof pos
-        aa = 12
-        s_tensor[..., aa] = -tensor[..., aa + 6]
-        s_tensor[..., aa + 1] = tensor[..., aa + 7]
-        s_tensor[..., aa + 2] = -tensor[..., aa + 8]
-        s_tensor[..., aa + 3] = tensor[..., aa + 9]
-        s_tensor[..., aa + 4] = tensor[..., aa + 10]
-        s_tensor[..., aa + 5] = -tensor[..., aa + 11]
-
-        s_tensor[..., aa + 6] = -tensor[..., aa + 0]
-        s_tensor[..., aa + 7] = tensor[..., aa + 1]
-        s_tensor[..., aa + 8] = -tensor[..., aa + 2]
-        s_tensor[..., aa + 9] = tensor[..., aa + 3]
-        s_tensor[..., aa + 10] = tensor[..., aa + 4]
-        s_tensor[..., aa + 11] = -tensor[..., aa + 5]
-
-        # dof vel
-        aa += 12
-        s_tensor[..., aa] = -tensor[..., aa + 6]
-        s_tensor[..., aa + 1] = tensor[..., aa + 7]
-        s_tensor[..., aa + 2] = -tensor[..., aa + 8]
-        s_tensor[..., aa + 3] = tensor[..., aa + 9]
-        s_tensor[..., aa + 4] = tensor[..., aa + 10]
-        s_tensor[..., aa + 5] = -tensor[..., aa + 11]
-
-        s_tensor[..., aa + 6] = -tensor[..., aa + 0]
-        s_tensor[..., aa + 7] = tensor[..., aa + 1]
-        s_tensor[..., aa + 8] = -tensor[..., aa + 2]
-        s_tensor[..., aa + 9] = tensor[..., aa + 3]
-        s_tensor[..., aa + 10] = tensor[..., aa + 4]
-        s_tensor[..., aa + 11] = -tensor[..., aa + 5]
-
-        aa += 12
-        # base_height
-        s_tensor[..., aa] = tensor[..., aa]
-        # base_lin_vel_world
-        s_tensor[..., aa + 1] = tensor[..., aa + 1]
-        s_tensor[..., aa + 2] = -tensor[..., aa + 2]
-        s_tensor[..., aa + 3] = tensor[..., aa + 3]
-        # foot_states_right
-        s_tensor[..., aa + 4] = tensor[..., aa + 4]
-        s_tensor[..., aa + 5] = -tensor[..., aa + 5]
-        s_tensor[..., aa + 6] = tensor[..., aa + 6]
-        s_tensor[..., aa + 7] = -tensor[..., aa + 7]
-        # foot_states_left
-        s_tensor[..., aa + 8] = tensor[..., aa + 48]
-        s_tensor[..., aa + 9] = -tensor[..., aa + 5]
-        s_tensor[..., aa + 10] = tensor[..., aa + 6]
-        s_tensor[..., aa + 11] = -tensor[..., aa + 7]
-
-        ...
-
-    def action_symmetry(self, action): ...
+        return (
+            mean_value_loss,
+            mean_surrogate_loss,
+            mean_actor_sym_loss,
+            mean_critic_sym_loss,
+        )

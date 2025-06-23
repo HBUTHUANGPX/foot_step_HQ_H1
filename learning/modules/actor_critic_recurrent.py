@@ -74,10 +74,10 @@ class ActorCriticRecurrent(ActorCritic):
         )
 
         self.memory_a = Memory(
-            num_actor_obs,
+            num_actor_obs, # 43
             type=rnn_type,
-            num_layers=rnn_num_layers,
-            hidden_size=rnn_hidden_size,
+            num_layers=rnn_num_layers, # 1
+            hidden_size=rnn_hidden_size, # 64
         )
         self.memory_c = Memory(
             num_critic_obs,
@@ -101,8 +101,8 @@ class ActorCriticRecurrent(ActorCritic):
         input_a = self.memory_a(observations, masks, hidden_states)
         return super().act(input_a.squeeze(0))
 
-    def act_inference(self, observations):
-        input_a = self.memory_a(observations)
+    def act_inference(self, observations, masks=None, hidden_states=None):
+        input_a = self.memory_a(observations, masks, hidden_states)
         return super().act_inference(input_a.squeeze(0))
 
     def evaluate(self, critic_observations, masks=None, hidden_states=None):
@@ -139,7 +139,24 @@ class Memory(torch.nn.Module):
             out, self.hidden_states = self.rnn(input.unsqueeze(0), self.hidden_states)
         return out
 
-    def reset(self, dones=None):
+    def reset(self, dones=None, hidden_states=None):
         # When the RNN is an LSTM, self.hidden_states_a is a list with hidden_state and cell_state
         for hidden_state in self.hidden_states:
             hidden_state[..., dones, :] = 0.0
+
+        # if dones is None:  # reset all hidden states
+        #     if hidden_states is None:
+        #         self.hidden_states = None
+        #     else:
+        #         self.hidden_states = hidden_states
+        # elif self.hidden_states is not None:  # reset hidden states of done environments
+        #     if hidden_states is None:
+        #         if isinstance(self.hidden_states, tuple):  # tuple in case of LSTM
+        #             for hidden_state in self.hidden_states:
+        #                 hidden_state[..., dones == 1, :] = 0.0
+        #         else:
+        #             self.hidden_states[..., dones == 1, :] = 0.0
+        #     else:
+        #         NotImplementedError(
+        #             "Resetting hidden states of done environments with custom hidden states is not implemented"
+        #         )

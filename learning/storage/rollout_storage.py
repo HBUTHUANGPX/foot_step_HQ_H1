@@ -30,7 +30,7 @@
 
 import torch
 from .base_storage import BaseStorage
-from learning.utils.utils import split_and_pad_trajectories
+from learning.utils.utils import split_and_pad_trajectories, unpad_trajectories
 
 
 class RolloutStorage(BaseStorage):
@@ -67,7 +67,7 @@ class RolloutStorage(BaseStorage):
         self.num_obs = num_obs
         self.num_critic_obs = num_critic_obs
         self.num_actions = num_actions
-
+        # num_transitions_per_env *= 2
         # Core
         self.observations = torch.zeros(
             num_transitions_per_env, num_envs, num_obs, device=self.device
@@ -174,6 +174,30 @@ class RolloutStorage(BaseStorage):
 
     def clear(self):
         self.fill_count = 0
+
+    # def compute_returns(self, last_values, gamma, lam):
+    #     num_transitions_per_env = self.num_transitions_per_env // 2
+    #     advantage = 0
+    #     resize = lambda x: x.view(num_transitions_per_env, 2, -1, 1)
+    #     for step in reversed(range(num_transitions_per_env)):
+    #         if step == num_transitions_per_env - 1:
+    #             next_values = last_values
+    #         else:
+    #             next_values = self.values[step + 1]
+    #         next_is_not_terminal = 1.0 - resize(self.dones)[step].float()
+    #         delta = (
+    #             resize(self.rewards)[step]
+    #             + next_is_not_terminal * gamma * next_values
+    #             - resize(self.values)[step]
+    #         )
+    #         advantage = delta + next_is_not_terminal * gamma * lam * advantage
+    #         resize(self.returns)[step] = advantage + resize(self.values)[step]
+
+    #     # Compute and normalize the advantages
+    #     self.advantages = self.returns - self.values
+    #     self.advantages = (self.advantages - self.advantages.mean()) / (
+    #         self.advantages.std() + 1e-8
+    #     )
 
     def compute_returns(self, last_values, gamma, lam):
         advantage = 0
@@ -324,3 +348,109 @@ class RolloutStorage(BaseStorage):
                 ), masks_batch
 
                 first_traj = last_traj
+
+    def obs_symmetry(self, tensor, critic_flag=False):
+        s_tensor = torch.zeros_like(tensor)
+        a = 0
+
+        # # base heading
+        # s_tensor[..., a] = -tensor[..., a]
+        # a += 1
+        # base ang vel
+        s_tensor[..., a] = -tensor[..., a]
+        s_tensor[..., a + 1] = tensor[..., a + 1]
+        s_tensor[..., a + 2] = -tensor[..., a + 2]
+        a += 3
+        # projected gravity
+        s_tensor[..., a] = tensor[..., a]
+        s_tensor[..., a + 1] = -tensor[..., a + 1]
+        s_tensor[..., a + 2] = tensor[..., a + 2]
+        a += 3
+        # commands
+        s_tensor[..., a] = tensor[..., a]
+        s_tensor[..., a + 1] = -tensor[..., a + 1]
+        s_tensor[..., a + 2] = -tensor[..., a + 2]
+        a += 3
+        # phase sin/cos
+        s_tensor[..., a] = -tensor[..., a]
+        s_tensor[..., a + 1] = -tensor[..., a + 1]
+        a += 2
+        # dof pos
+        s_tensor[..., a] = -tensor[..., a + 6]
+        s_tensor[..., a + 1] = tensor[..., a + 7]
+        s_tensor[..., a + 2] = -tensor[..., a + 8]
+        s_tensor[..., a + 3] = tensor[..., a + 9]
+        s_tensor[..., a + 4] = tensor[..., a + 10]
+        s_tensor[..., a + 5] = -tensor[..., a + 11]
+
+        s_tensor[..., a + 6] = -tensor[..., a + 0]
+        s_tensor[..., a + 7] = tensor[..., a + 1]
+        s_tensor[..., a + 8] = -tensor[..., a + 2]
+        s_tensor[..., a + 9] = tensor[..., a + 3]
+        s_tensor[..., a + 10] = tensor[..., a + 4]
+        s_tensor[..., a + 11] = -tensor[..., a + 5]
+        a += 12
+        # dof vel
+        s_tensor[..., a] = -tensor[..., a + 6]
+        s_tensor[..., a + 1] = tensor[..., a + 7]
+        s_tensor[..., a + 2] = -tensor[..., a + 8]
+        s_tensor[..., a + 3] = tensor[..., a + 9]
+        s_tensor[..., a + 4] = tensor[..., a + 10]
+        s_tensor[..., a + 5] = -tensor[..., a + 11]
+
+        s_tensor[..., a + 6] = -tensor[..., a]
+        s_tensor[..., a + 7] = tensor[..., a + 1]
+        s_tensor[..., a + 8] = -tensor[..., a + 2]
+        s_tensor[..., a + 9] = tensor[..., a + 3]
+        s_tensor[..., a + 10] = tensor[..., a + 4]
+        s_tensor[..., a + 11] = -tensor[..., a + 5]
+        a += 12
+        # foot_states_right & foot_states_left
+        s_tensor[..., a] = tensor[..., a + 4]
+        s_tensor[..., a + 1] = -tensor[..., a + 5]
+        s_tensor[..., a + 2] = tensor[..., a + 6]
+        s_tensor[..., a + 3] = -tensor[..., a + 7]
+
+        s_tensor[..., a + 4] = tensor[..., a]
+        s_tensor[..., a + 5] = -tensor[..., a + 1]
+        s_tensor[..., a + 6] = tensor[..., a + 2]
+        s_tensor[..., a + 7] = -tensor[..., a + 3]
+        a += 8
+        if critic_flag:
+            # base_height
+            s_tensor[..., a] = tensor[..., a]
+            a += 1
+            # base_lin_vel_world
+            s_tensor[..., a] = tensor[..., a]
+            s_tensor[..., a + 1] = -tensor[..., a + 1]
+            s_tensor[..., a + 2] = tensor[..., a + 2]
+            a += 3
+            # step_commands_right
+            s_tensor[..., a] = tensor[..., a + 4]
+            s_tensor[..., a + 1] = -tensor[..., a + 5]
+            s_tensor[..., a + 2] = tensor[..., a + 6]
+            s_tensor[..., a + 3] = -tensor[..., a + 7]
+            s_tensor[..., a + 4] = tensor[..., a]
+            s_tensor[..., a + 5] = -tensor[..., a + 1]
+            s_tensor[..., a + 6] = tensor[..., a + 2]
+            s_tensor[..., a + 7] = -tensor[..., a + 3]
+            a += 8
+        return s_tensor
+
+    def action_symmetry(self, tensor):
+        s_tensor = torch.zeros_like(tensor)
+        a = 0
+        s_tensor[..., a] = -tensor[..., a + 6]
+        s_tensor[..., a + 1] = tensor[..., a + 7]
+        s_tensor[..., a + 2] = -tensor[..., a + 8]
+        s_tensor[..., a + 3] = tensor[..., a + 9]
+        s_tensor[..., a + 4] = tensor[..., a + 10]
+        s_tensor[..., a + 5] = -tensor[..., a + 11]
+
+        s_tensor[..., a + 6] = -tensor[..., a]
+        s_tensor[..., a + 7] = tensor[..., a + 1]
+        s_tensor[..., a + 8] = -tensor[..., a + 2]
+        s_tensor[..., a + 9] = tensor[..., a + 3]
+        s_tensor[..., a + 10] = tensor[..., a + 4]
+        s_tensor[..., a + 11] = -tensor[..., a + 5]
+        return s_tensor

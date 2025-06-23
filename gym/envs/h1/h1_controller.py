@@ -796,7 +796,7 @@ class H1Controller(LeggedRobot):
         base_heading = self.base_heading[update_commands_ids]
         c_s = self.c_s[update_commands_ids]  # current step
         CoM = self.CoM[update_commands_ids]
-        T = step_period * self.dt
+        T = step_period * self.dt # 半个周期
         w = self.w[update_commands_ids]
         dstep_length = torch.norm(commands[:, :2], dim=1, keepdim=True) * T
         dstep_width = self.dstep_width[update_commands_ids]
@@ -1054,7 +1054,7 @@ class H1Controller(LeggedRobot):
 
     def _visualization(self):
         self.gym.clear_lines(self.viewer)
-        # self._draw_heightmap_vis()
+        self._draw_heightmap_vis()
         # self._draw_debug_vis()
         # self._draw_velocity_arrow_vis()
         self._draw_world_velocity_arrow_vis()
@@ -1160,24 +1160,9 @@ class H1Controller(LeggedRobot):
             0.02, 4, 4, None, color=(1, 0, 0)
         )
 
-        base_projection = torch.cat(
-            (self.base_pos[:, :2], torch.zeros((self.num_envs, 1), device=self.device)),
-            dim=1,
-        )
-        right_hip_projection = torch.cat(
-            (
-                self.right_hip_pos[:, :2],
-                torch.zeros((self.num_envs, 1), device=self.device),
-            ),
-            dim=1,
-        )
-        left_hip_projection = torch.cat(
-            (
-                self.left_hip_pos[:, :2],
-                torch.zeros((self.num_envs, 1), device=self.device),
-            ),
-            dim=1,
-        )
+        base_projection = self.base_pos[:, :3]
+        right_hip_projection = self.right_hip_pos[:, :3]
+        left_hip_projection = self.left_hip_pos[:, :3]
         for i in range(self.num_envs):
             base_loc = gymapi.Transform(gymapi.Vec3(*base_projection[i]), r=None)
             gymutil.draw_lines(
@@ -1198,10 +1183,7 @@ class H1Controller(LeggedRobot):
 
     def _draw_CoM_vis(self):
         sphere_CoM = gymutil.WireframeSphereGeometry(0.02, 4, 4, None, color=(1, 1, 1))
-        CoM_projection = torch.cat(
-            (self.CoM[:, :2], torch.zeros((self.num_envs, 1), device=self.device)),
-            dim=1,
-        )
+        CoM_projection = self.CoM[:, :3]
         for i in range(self.num_envs):
             CoM_loc = gymapi.Transform(gymapi.Vec3(*CoM_projection[i]), r=None)
             gymutil.draw_lines(sphere_CoM, self.gym, self.viewer, self.envs[i], CoM_loc)
@@ -1292,9 +1274,9 @@ class H1Controller(LeggedRobot):
         return self._neg_exp(base_heading_error, a=torch.pi / 2)
 
     def _reward_base_yaw_vel(self):
-        error = self.commands[:, 2:3] - self.root_states[:, 9:10]
+        error = self.commands[:, 2:3] - self.base_ang_vel[:, 2:3]
         error *= 1.0 / (1.0 + torch.abs(self.commands[:, 2:3]))
-        return self._negsqrd_exp(error, a=1.0).sum(dim=1)
+        return self._negsqrd_exp(error, a=0.4).sum(dim=1)
 
     def _reward_base_z_orientation(self):
         """Reward tracking upright orientation"""

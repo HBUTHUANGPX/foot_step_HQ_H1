@@ -168,10 +168,10 @@ class H1ControllerCfg(LeggedRobotCfg):
             sample_period = [14, 15]  # [20, 21] # equal to gait frequency
             dstep_width = [0.326, 0.326]  # [0.2, 0.4] # min max [m]
 
-            lin_vel_x = [-1.0, 1.0]  # [-3.0, 3.0] # min max [m/s]
+            lin_vel_x = [-2.0, 2.0]  # [-3.0, 3.0] # min max [m/s]
             lin_vel_y = 0.5  # 1.5   # min max [m/s]
             # yaw_vel = 0.0  # min max [rad/s]
-            yaw_vel = 1.0  # min max [rad/s]
+            yaw_vel = 3.0  # min max [rad/s]
 
     class domain_rand(LeggedRobotCfg.domain_rand):
         randomize_friction = True  # True, False
@@ -261,7 +261,7 @@ class H1ControllerCfg(LeggedRobotCfg):
             # base_z_orientation = 1.0
             # tracking_lin_vel_world = 4.0
             tracking_lin_vel = 4.0
-            base_yaw_vel = 3.0
+            base_yaw_vel = 6.0
             base_roll = 5.0
             base_pitch = 5.0
 
@@ -307,7 +307,7 @@ class H1ControllerRunnerCfg(LeggedRobotRunnerCfg):
         rnn_hidden_size = 64
         rnn_num_layers = 1
         actor_obs = [
-            "base_heading",
+            # "base_heading",
             "base_ang_vel",
             "projected_gravity",
             "commands",

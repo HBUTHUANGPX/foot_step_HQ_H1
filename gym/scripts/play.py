@@ -189,18 +189,26 @@ def play(args):
 
         if CUSTOM_COMMANDS:
             # * Scenario 1 (For flat terrain)
-            if (i + 1) == 500:
+            if (i + 1) == 300:
                 env.commands[:, 0] = 1.0
                 print("vx = ",env.commands[0, 0])
-            elif (i + 1) == 1000:
+            elif (i + 1) == 600:
                 env.commands[:, 0] = -1.0
                 print("vx = ",env.commands[0, 0])
+            elif (i + 1) == 900:
+                env.commands[:, 0] = 0.0
+                env.commands[:, 1] = 1.0
+                print("vy = ",env.commands[0, 1])
+            elif (i + 1) == 1200:
+                env.commands[:, 0] = 0.0
+                env.commands[:, 1] = -1.0
+                print("vy = ",env.commands[0, 1])
             elif (i + 1) == 1500:
                 env.commands[:, 0] = 0.0
                 env.commands[:, 1] = 0.0
                 env.commands[:, 2] = 1.0
                 print("wz = ",env.commands[0, 2])
-            elif (i + 1) == 2000:
+            elif (i + 1) == 1800:
                 env.commands[:, 0] = 0.0
                 env.commands[:, 1] = 0.0
                 env.commands[:, 2] = -1.0

@@ -167,7 +167,7 @@ class OnPolicyRunner:
                 start = stop
                 self.alg.compute_returns(critic_obs)
 
-            mean_value_loss, mean_surrogate_loss = self.alg.update()
+            mean_value_loss, mean_surrogate_loss,mean_actor_sym_loss, mean_critic_sym_loss = self.alg.update()
             stop = time.time()
             learn_time = stop - start
 
@@ -267,6 +267,8 @@ class OnPolicyRunner:
             {
                 "Loss/value_function": locs["mean_value_loss"],
                 "Loss/surrogate": locs["mean_surrogate_loss"],
+                "Loss/actor_sym": locs["mean_actor_sym_loss"],
+                "Loss/critic_sym": locs["mean_critic_sym_loss"],
                 "Loss/learning_rate": self.alg.learning_rate,
                 "Policy/mean_noise_std": mean_std.item(),
                 "Perf/total_fps": fps,
@@ -295,6 +297,8 @@ class OnPolicyRunner:
                             'collection_time']:.3f}s, learning {locs['learn_time']:.3f}s)\n"""
                 f"""{'Value function loss:':>{pad}} {locs['mean_value_loss']:.4f}\n"""
                 f"""{'Surrogate loss:':>{pad}} {locs['mean_surrogate_loss']:.4f}\n"""
+                f"""{'actor sym loss:':>{pad}} {locs['mean_actor_sym_loss']:.4f}\n"""
+                f"""{'critic sym loss:':>{pad}} {locs['mean_critic_sym_loss']:.4f}\n"""
                 f"""{'Mean action noise std:':>{pad}} {mean_std.item():.2f}\n"""
                 f"""{'Mean reward:':>{pad}} {statistics.mean(locs['rewbuffer']):.2f}\n"""
                 f"""{'Mean episode length:':>{pad}} {statistics.mean(locs['lenbuffer']):.2f}\n"""
@@ -307,6 +311,8 @@ class OnPolicyRunner:
                             'collection_time']:.3f}s, learning {locs['learn_time']:.3f}s)\n"""
                 f"""{'Value function loss:':>{pad}} {locs['mean_value_loss']:.4f}\n"""
                 f"""{'Surrogate loss:':>{pad}} {locs['mean_surrogate_loss']:.4f}\n"""
+                f"""{'actor sym loss:':>{pad}} {locs['mean_actor_sym_loss']:.4f}\n"""
+                f"""{'critic sym loss:':>{pad}} {locs['mean_critic_sym_loss']:.4f}\n"""
                 f"""{'Mean action noise std:':>{pad}} {mean_std.item():.2f}\n"""
             )
 

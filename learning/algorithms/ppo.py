@@ -56,7 +56,7 @@ class PPO:
         schedule="fixed",
         desired_kl=0.01,
         device="cpu",
-        symmetry_scale=1e-3,
+        symmetry_scale=1e-0,
     ):
 
         self.device = device
@@ -187,13 +187,12 @@ class PPO:
         ) in generator:
 
             flip_obs_batch = self.storage.obs_symmetry(obs_batch, False)
-            # flip_obs_batch_unpad = unpad_trajectories(flip_obs_batch,masks_batch)
             flip_critic_obs_batch = self.storage.obs_symmetry(critic_obs_batch, True)
             flip_value_batch = self.actor_critic.evaluate(
                 flip_critic_obs_batch,
                 masks=masks_batch,
                 hidden_states=hid_states_batch[1],
-            ).detach()
+            )
 
             action = self.actor_critic.act_inference(
                 obs_batch, masks_batch, hid_states_batch[0]
@@ -202,7 +201,7 @@ class PPO:
                 self.actor_critic.act_inference(
                     flip_obs_batch, masks_batch, hid_states_batch[0]
                 )
-            ).detach()
+            )
 
             self.actor_critic.act(
                 obs_batch, masks=masks_batch, hidden_states=hid_states_batch[0]
@@ -268,7 +267,7 @@ class PPO:
                 )
             )
             critic_sym_loss = self.symmetry_scale * torch.mean(
-                torch.square(flip_value_batch.detach() - value_batch.detach())
+                torch.square(value_batch.detach() - flip_value_batch)
             )
 
             loss = (
@@ -276,7 +275,7 @@ class PPO:
                 + self.value_loss_coef * value_loss
                 - self.entropy_coef * entropy_batch.mean()
                 + actor_sym_loss
-                # + critic_sym_loss
+                + critic_sym_loss
             )
 
             # Gradient step

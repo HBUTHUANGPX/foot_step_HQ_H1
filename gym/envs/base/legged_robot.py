@@ -94,7 +94,7 @@ class LeggedRobot(BaseTask):
         self.render()
         for _ in range(self.cfg.control.decimation):
             self.torques = self._compute_torques()
-
+            # print("torques: ",self.torques[0,:])
             if self.cfg.asset.disable_motors:
                 self.torques[:] = 0.0
 

@@ -78,8 +78,9 @@ def plot_data(data_queue):
                 lines[i].set_data(xdata[i], ydata[i])
                 axs[i].relim()
                 axs[i].autoscale_view()
-            fig.canvas.draw()
-            fig.canvas.flush_events()
+            if len(xdata[i]) % 200 == 0:
+                fig.canvas.draw()
+                fig.canvas.flush_events()
         else:
             # print("cc")
             time.sleep(0.1)
@@ -119,7 +120,7 @@ def play(args):
     env_cfg.commands.sample_radius_offset = 0.05  # 0.05
 
     env_cfg.commands.ranges.dstep_width = [0.3, 0.3]
-    # env_cfg.asset.fix_base_link = True
+    env_cfg.asset.fix_base_link = True
     # * prepare environment
     env, _ = task_registry.make_env(name=args.task, args=args, env_cfg=env_cfg)
 
@@ -135,9 +136,9 @@ def play(args):
         path = os.path.join(
             LEGGED_GYM_ROOT_DIR, "logs", train_cfg.runner.experiment_name, "exported"
         )
-        policy_runner.export(path)
-        print("Exported policy model to: ", path)
-
+        # policy_runner.export(path)
+        # print("Exported policy model to: ", path)
+# 
     start = time.time()
     robot_index = 0  # which robot is used for logging
     joint_index = 1  # which joint is used for logging

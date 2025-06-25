@@ -156,10 +156,10 @@ class Terrain:
             # terrain_utils.pyramid_sloped_terrain(terrain, slope=slope, platform_size=3.)
             terrain_utils.random_uniform_terrain(
                 terrain,
-                min_height=-0.05,
-                max_height=0.05,
+                min_height=-0.02,
+                max_height=0.02,
                 step=0.005,
-                downsampled_scale=0.2,
+                downsampled_scale=0.3,
             )
         elif choice < self.proportions[3]:
             if choice < self.proportions[2]:
@@ -248,7 +248,7 @@ class Terrain:
 
         step = 0.01 * difficulty
         terrain_utils.random_uniform_terrain(
-            terrain, min_height=-0.05, max_height=0.05, step=step, downsampled_scale=0.2
+            terrain, min_height=-0.01, max_height=0.01, step=step, downsampled_scale=0.2
         )
 
         return terrain

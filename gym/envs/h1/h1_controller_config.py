@@ -11,28 +11,31 @@ class H1ControllerCfg(LeggedRobotCfg):
     class env(LeggedRobotCfg.env):
         num_envs = 4096
         num_actuators = 12
-        episode_length_s = 5  # 100
+        episode_length_s = 8  # 100
 
     class terrain(LeggedRobotCfg.terrain):
         curriculum = False
-        mesh_type = "plane"  # 'plane' 'heightfield' 'trimesh'
-        measure_heights = False  # True, False
-        measured_points_x_range = [-0.8, 0.8]
-        measured_points_x_num_sample = 33
-        measured_points_y_range = [-0.8, 0.8]
-        measured_points_y_num_sample = 33
-        selected = True  # True, False
-        terrain_kwargs = {"type": "stepping_stones"}
+        mesh_type = "trimesh"  # 'plane' 'heightfield' 'trimesh'
+        horizontal_scale = 0.1 
+        vertical_scale = 0.005  # [m]
+        selected = False  # True, False
+        measure_heights = False
+        # terrain_kwargs = {"type": "stepping_stones"}
         # terrain_kwargs = {'type': 'random_uniform'}
         # terrain_kwargs = {'type': 'gap'}
         # difficulty = 0.35 # For gap terrain
         # platform_size = 5.5 # For gap terrain
         difficulty = 5.0  # For rough terrain
-        terrain_length = 18.0  # For rough terrain
-        terrain_width = 18.0  # For rough terrain
+        terrain_length = 8.0  # For rough terrain
+        terrain_width = 8.0  # For rough terrain
+        platform_size = 5.0
         # terrain types: [pyramid_sloped, random_uniform, stairs down, stairs up, discrete obstacles, stepping_stones, gap, pit]
-        terrain_proportions = [0.0, 0.5, 0.0, 0.5, 0.0, 0.0, 0.0]
-
+        num_rows = 20  # number of terrain rows (levels)
+        num_cols = 10  # number of terrain cols (types)
+        terrain_proportions = [0.2, 0.8, 0., 0., 0., 0.0, 0.0]
+        slope_treshold = (
+            0.75  # slopes above this threshold will be corrected to vertical surfaces
+        )
     class init_state(LeggedRobotCfg.init_state):
         # reset_mode = 'reset_to_range' # 'reset_to_basic'
         reset_mode = "reset_to_basic"  # 'reset_to_basic'
@@ -139,13 +142,14 @@ class H1ControllerCfg(LeggedRobotCfg):
 
         actuation_scale = 0.25
         exp_avg_decay = None
-        decimation = 8
+        decimation = 10
 
     class sim(LeggedRobotCfg.sim):
-        dt = 0.0025
+        dt = 0.002
 
         class physx(LeggedRobotCfg.sim.physx):
-            num_threads = 20
+            num_threads = 32
+            max_gpu_contact_pairs = 2**25  # 2**24 -> needed for 8000 envs and more
 
     class commands(LeggedRobotCfg.commands):
         curriculum = False
@@ -261,7 +265,7 @@ class H1ControllerCfg(LeggedRobotCfg):
             # base_z_orientation = 1.0
             # tracking_lin_vel_world = 4.0
             tracking_lin_vel = 4.0
-            base_yaw_vel = 6.0
+            base_yaw_vel = 12.0#6.0
             base_roll = 5.0
             base_pitch = 5.0
 
@@ -297,8 +301,12 @@ class H1ControllerRunnerCfg(LeggedRobotRunnerCfg):
 
     class policy(LeggedRobotRunnerCfg.policy):
         init_noise_std = 1.0
-        actor_hidden_dims = [1024,512,256,64]
-        critic_hidden_dims = [1024,512,256,64]
+        # origin
+        # actor_hidden_dims = [1024,512,256,64]
+        # critic_hidden_dims = [1024,512,256,64]
+        # test 1
+        actor_hidden_dims = [512,256,128,32]
+        critic_hidden_dims = [512,256,128,32]
         # (elu, relu, selu, crelu, lrelu, tanh, sigmoid)
         activation = "tanh"
         normalize_obs = False  # True, False
@@ -317,6 +325,7 @@ class H1ControllerRunnerCfg(LeggedRobotRunnerCfg):
             "dof_vel",
             "foot_states_right",
             "foot_states_left",
+            "standing_command_mask",
         ]
 
         critic_obs = actor_obs + [

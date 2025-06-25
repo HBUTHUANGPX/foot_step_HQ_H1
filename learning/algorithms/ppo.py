@@ -186,23 +186,6 @@ class PPO:
             masks_batch,
         ) in generator:
 
-            flip_obs_batch = self.storage.obs_symmetry(obs_batch, False)
-            flip_critic_obs_batch = self.storage.obs_symmetry(critic_obs_batch, True)
-            flip_value_batch = self.actor_critic.evaluate(
-                flip_critic_obs_batch,
-                masks=masks_batch,
-                hidden_states=hid_states_batch[1],
-            )
-
-            action = self.actor_critic.act_inference(
-                obs_batch, masks_batch, hid_states_batch[0]
-            ).detach()
-            flip_obs2action_flip = self.storage.action_symmetry(
-                self.actor_critic.act_inference(
-                    flip_obs_batch, masks_batch, hid_states_batch[0]
-                )
-            )
-
             self.actor_critic.act(
                 obs_batch, masks=masks_batch, hidden_states=hid_states_batch[0]
             )
@@ -260,6 +243,23 @@ class PPO:
                 value_loss = torch.max(value_losses, value_losses_clipped).mean()
             else:
                 value_loss = (returns_batch - value_batch).pow(2).mean()
+
+            flip_obs_batch = self.storage.obs_symmetry(obs_batch, False)
+            flip_critic_obs_batch = self.storage.obs_symmetry(critic_obs_batch, True)
+            flip_value_batch = self.actor_critic.evaluate(
+                flip_critic_obs_batch,
+                masks=masks_batch,
+                hidden_states=hid_states_batch[1],
+            )
+
+            action = self.actor_critic.act_inference(
+                obs_batch, masks_batch, hid_states_batch[0]
+            ).detach()
+            flip_obs2action_flip = self.storage.action_symmetry(
+                self.actor_critic.act_inference(
+                    flip_obs_batch, masks_batch, hid_states_batch[0]
+                )
+            )
             actor_sym_loss = self.symmetry_scale * torch.mean(
                 torch.sum(
                     torch.square(action - flip_obs2action_flip),

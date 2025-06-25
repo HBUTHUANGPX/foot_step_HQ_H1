@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2021 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-# 
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
 #
@@ -38,8 +38,9 @@ from isaacgym import gymutil
 
 from gym import LEGGED_GYM_ROOT_DIR, LEGGED_GYM_ENVS_DIR
 
+
 def class_to_dict(obj) -> dict:
-    if not  hasattr(obj,"__dict__"):
+    if not hasattr(obj, "__dict__"):
         return obj
     result = {}
     for key in dir(obj):
@@ -55,6 +56,7 @@ def class_to_dict(obj) -> dict:
         result[key] = element
     return result
 
+
 def update_class_from_dict(obj, dict):
     for key, val in dict.items():
         attr = getattr(obj, key, None)
@@ -64,17 +66,19 @@ def update_class_from_dict(obj, dict):
             setattr(obj, key, val)
     return
 
+
 def set_seed(seed):
     if seed == -1:
         seed = np.random.randint(0, 10000)
     print("Setting seed: {}".format(seed))
-    
+
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+
 
 def parse_sim_params(args, cfg):
     # code from Isaac Gym Preview 2
@@ -100,37 +104,43 @@ def parse_sim_params(args, cfg):
 
     return sim_params
 
-def get_load_path(root, load_run=-1, checkpoint=-1,play_flag=False):
+
+def get_load_path(root, load_run=-1, checkpoint=-1, play_flag=False):
     try:
-        runs = sorted(os.listdir(root),
-                        key=lambda x: os.path.getctime(os.path.join(root, x)))
-        #TODO sort by date to handle change of month
+        runs = sorted(
+            os.listdir(root), key=lambda x: os.path.getctime(os.path.join(root, x))
+        )
+        # TODO sort by date to handle change of month
         # runs.sort()
-        if 'exported' in runs: runs.remove('exported')
-        if 'videos' in runs: runs.remove('videos')
-        if 'analysis' in runs: runs.remove('analysis')
-            
+        if "exported" in runs:
+            runs.remove("exported")
+        if "videos" in runs:
+            runs.remove("videos")
+        if "analysis" in runs:
+            runs.remove("analysis")
+
         last_run = os.path.join(root, runs[-1])
     except:
         raise ValueError("No runs in this directory: " + root)
-    if load_run==-1:
+    if load_run == -1:
         load_run = last_run
     else:
         load_run = os.path.join(root, load_run)
 
-    if checkpoint==-1:
-        models = [file for file in os.listdir(load_run) if 'model' in file]
-        models.sort(key=lambda m: '{0:0>15}'.format(m))
+    if checkpoint == -1:
+        models = [file for file in os.listdir(load_run) if "model" in file]
+        models.sort(key=lambda m: "{0:0>15}".format(m))
         model = models[-1]
     else:
-        model = "model_{}.pt".format(checkpoint) 
+        model = "model_{}.pt".format(checkpoint)
 
     load_path = os.path.join(load_run, model)
     if play_flag:
-        return load_path,load_run,model
+        return load_path, load_run, model
 
     else:
         return load_path
+
 
 def update_cfg_from_args(env_cfg, train_cfg, args):
     # seed
@@ -161,52 +171,192 @@ def update_cfg_from_args(env_cfg, train_cfg, args):
         if args.disable_local_saving is True:
             train_cfg.logging.enable_local_saving = False
 
-
     return env_cfg, train_cfg
+
 
 def get_args():
     custom_parameters = [
-        {"name": "--task", "type": str, "default": "h1_controller", "help": "Resume training or start testing from a checkpoint. Overrides config file if provided."},
-        {"name": "--resume", "action": "store_true", "default": False,  "help": "Resume training from a checkpoint"},
-        {"name": "--experiment_name", "type": str,  "help": "Name of the experiment to run or load. Overrides config file if provided."},
-        {"name": "--run_name", "type": str,  "help": "Name of the run. Overrides config file if provided."},
-        {"name": "--load_files", "action": "store_true", "default": False, "help": "Load original class/config files corresponding to the load_run."},
-        {"name": "--load_run", "type": str,  "help": "Name of the run to load when resume=True. If -1: will load the last run. Overrides config file if provided."},
-        {"name": "--checkpoint", "type": str,  "help": "Saved model checkpoint number. If -1: will load the last checkpoint. Overrides config file if provided."},
-        {"name": "--headless", "action": "store_true", "default": False, "help": "Force display off at all times"},
-        {"name": "--horovod", "action": "store_true", "default": False, "help": "Use horovod for multi-gpu training"},
-        {"name": "--rl_device", "type": str, "default": "cuda:0", "help": 'Device used by the RL algorithm, (cpu, gpu, cuda:0, cuda:1 etc..)'},
-        {"name": "--sim_device", "type": str, "default": "cuda:0", "help": 'Device used by the simulation, (cpu, gpu, cuda:0, cuda:1 etc..)'},
-        {"name": "--num_envs", "type": int, "help": "Number of environments to create. Overrides config file if provided."},
-        {"name": "--seed", "type": int, "default": 1, "help": "Random seed. Overrides config file if provided."},
-        {"name": "--max_iterations", "type": int, "help": "Maximum number of training iterations. Overrides config file if provided."},
-        
-        {"name": "--wandb_project", "type": str, "default": "foot_step", "help":
-            "Enter the name of your project for better WandB tracking."},
-        {"name": "--wandb_entity", "type": str, "default": "", "help":
-            "Enter your wandb entity username to track your experiment on your account."},
-        {"name": "--wandb_sweep_id", "type": str, "help":
-            "Enter a WandB sweep ID to continue an existing sweep."},
-        {"name": "--wandb_sweep_config", "type": str, "help":
-            "Enter the name of a JSON config file defining the WandB sweep."},
-        {"name": "--disable_wandb", "action": "store_true", "default": False, "help":
-            "Disable WandB logging for debugging."},
-        {"name": "--disable_local_saving", "action": "store_true", "default": False, "help":
-            "Disable local saving for debugging."},
-        {"name": "--sampling_method", "type": str, "help": 
-            "Select sampling method. Overrides config file if provided."},
-        {"name": "--record", "action": "store_true", "default": False,
-         "help": "Record IsaacGym simulation at real-time speed."},
+        {
+            "name": "--task",
+            "type": str,
+            "default": "h1_controller",
+            "help": "Resume training or start testing from a checkpoint. Overrides config file if provided.",
+        },
+        {
+            "name": "--resume",
+            "action": "store_true",
+            "default": False,
+            "help": "Resume training from a checkpoint",
+        },
+        {
+            "name": "--experiment_name",
+            "type": str,
+            "help": "Name of the experiment to run or load. Overrides config file if provided.",
+        },
+        {
+            "name": "--run_name",
+            "type": str,
+            "help": "Name of the run. Overrides config file if provided.",
+        },
+        {
+            "name": "--load_files",
+            "action": "store_true",
+            "default": False,
+            "help": "Load original class/config files corresponding to the load_run.",
+        },
+        {
+            "name": "--load_run",
+            "type": str,
+            "help": "Name of the run to load when resume=True. If -1: will load the last run. Overrides config file if provided.",
+        },
+        {
+            "name": "--checkpoint",
+            "type": str,
+            "help": "Saved model checkpoint number. If -1: will load the last checkpoint. Overrides config file if provided.",
+        },
+        {
+            "name": "--headless",
+            "action": "store_true",
+            "default": False,
+            "help": "Force display off at all times",
+        },
+        {
+            "name": "--horovod",
+            "action": "store_true",
+            "default": False,
+            "help": "Use horovod for multi-gpu training",
+        },
+        {
+            "name": "--rl_device",
+            "type": str,
+            "default": "cuda:0",
+            "help": "Device used by the RL algorithm, (cpu, gpu, cuda:0, cuda:1 etc..)",
+        },
+        {
+            "name": "--sim_device",
+            "type": str,
+            "default": "cuda:0",
+            "help": "Device used by the simulation, (cpu, gpu, cuda:0, cuda:1 etc..)",
+        },
+        {
+            "name": "--num_envs",
+            "type": int,
+            "help": "Number of environments to create. Overrides config file if provided.",
+        },
+        {
+            "name": "--seed",
+            "type": int,
+            "default": 1,
+            "help": "Random seed. Overrides config file if provided.",
+        },
+        {
+            "name": "--max_iterations",
+            "type": int,
+            "help": "Maximum number of training iterations. Overrides config file if provided.",
+        },
+        {
+            "name": "--wandb_project",
+            "type": str,
+            "default": "foot_step",
+            "help": "Enter the name of your project for better WandB tracking.",
+        },
+        {
+            "name": "--wandb_entity",
+            "type": str,
+            "default": "",
+            "help": "Enter your wandb entity username to track your experiment on your account.",
+        },
+        {
+            "name": "--wandb_sweep_id",
+            "type": str,
+            "help": "Enter a WandB sweep ID to continue an existing sweep.",
+        },
+        {
+            "name": "--wandb_sweep_config",
+            "type": str,
+            "help": "Enter the name of a JSON config file defining the WandB sweep.",
+        },
+        {
+            "name": "--disable_wandb",
+            "action": "store_true",
+            "default": False,
+            "help": "Disable WandB logging for debugging.",
+        },
+        {
+            "name": "--disable_local_saving",
+            "action": "store_true",
+            "default": False,
+            "help": "Disable local saving for debugging.",
+        },
+        {
+            "name": "--sampling_method",
+            "type": str,
+            "help": "Select sampling method. Overrides config file if provided.",
+        },
+        {
+            "name": "--record",
+            "action": "store_true",
+            "default": False,
+            "help": "Record IsaacGym simulation at real-time speed.",
+        },
     ]
     # parse arguments
     args = gymutil.parse_arguments(
-        description="RL Policy",
-        custom_parameters=custom_parameters)
+        description="RL Policy", custom_parameters=custom_parameters
+    )
 
     # name alignment
     args.sim_device_id = args.compute_device_id
     args.sim_device = args.sim_device_type
-    if args.sim_device=='cuda':
+    if args.sim_device == "cuda":
         args.sim_device += f":{args.sim_device_id}"
     return args
 
+
+def export_policy_as_jit(actor_critic, path):
+    if hasattr(actor_critic, "memory_a"):
+        # assumes LSTM: TODO add GRU
+        exporter = PolicyExporterLSTM(actor_critic)
+        exporter.export(path)
+    else:
+        os.makedirs(path, exist_ok=True)
+        path = os.path.join(path, "policy_1.pt")
+        model = copy.deepcopy(actor_critic.actor).to("cpu")
+        traced_script_module = torch.jit.script(model)
+        traced_script_module.save(path)
+
+
+class PolicyExporterLSTM(torch.nn.Module):
+    def __init__(self, actor_critic):
+        super().__init__()
+        self.actor = copy.deepcopy(actor_critic.actor.mean_NN)
+        # print(self.actor)
+        self.is_recurrent = actor_critic.is_recurrent
+        self.memory = copy.deepcopy(actor_critic.memory_a.rnn)
+        self.memory.cpu()
+        self.register_buffer(
+            f"hidden_state",
+            torch.zeros(self.memory.num_layers, 1, self.memory.hidden_size),
+        )
+        self.register_buffer(
+            f"cell_state",
+            torch.zeros(self.memory.num_layers, 1, self.memory.hidden_size),
+        )
+
+    def forward(self, x):
+        out, (h, c) = self.memory(x.unsqueeze(0), (self.hidden_state, self.cell_state))
+        self.hidden_state[:] = h
+        self.cell_state[:] = c
+        return self.actor(out.squeeze(0))
+
+    @torch.jit.export
+    def reset_memory(self):
+        self.hidden_state[:] = 0.0
+        self.cell_state[:] = 0.0
+
+    def export(self, path):
+        os.makedirs(path, exist_ok=True)
+        path = os.path.join(path, "policy_lstm_1.pt")
+        self.to("cpu")
+        traced_script_module = torch.jit.script(self)
+        traced_script_module.save(path)

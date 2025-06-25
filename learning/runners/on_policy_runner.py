@@ -354,6 +354,7 @@ class OnPolicyRunner:
 
     def get_inference_actions(self):
         obs = self.get_obs(self.policy_cfg["actor_obs"])
+        # print("obs: ",obs[0,:])
         return self.alg.actor_critic.act_inference(obs)
 
     def export(self, path):

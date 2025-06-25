@@ -416,6 +416,10 @@ class RolloutStorage(BaseStorage):
         s_tensor[..., a + 6] = tensor[..., a + 2]
         s_tensor[..., a + 7] = -tensor[..., a + 3]
         a += 8
+        # standing_command_mask
+        s_tensor[..., a] = tensor[..., a]
+        a += 1
+
         if critic_flag:
             # base_height
             s_tensor[..., a] = tensor[..., a]

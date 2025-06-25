@@ -68,9 +68,10 @@ def play(args):
     env_cfg.env.episode_length_s = int(1e7)  # 5, int(1e7)
     env_cfg.seed = 1
     env_cfg.domain_rand.randomize_friction = False
-    env_cfg.terrain.num_cols = 5
-    env_cfg.terrain.num_rows = 5
-    env_cfg.terrain.terrain_proportions = [1.0, 0., 0., 0., 0., 0.0, 0.0]
+    env_cfg.terrain.mesh_type = "plane" 
+    env_cfg.terrain.num_cols = 1
+    env_cfg.terrain.num_rows = 1
+    # env_cfg.terrain.terrain_proportions = [1.0, 0., 0., 0., 0., 0.0, 0.0]
     env_cfg.domain_rand.push_robots = False  # True
     env_cfg.init_state.reset_mode = (
         "reset_to_basic"  # 'reset_to_basic', 'reset_to_range'
@@ -163,11 +164,12 @@ def play(args):
     # plot_thread.start()
     scale = 0.2
     env.commands[:, :] = 0
-    torch.set_printoptions(precision=32, linewidth=80, sci_mode=False)
-    for i in range(5):
-    # for i in range(max_it):
-        print(f"============= {i} ===================")
+    for i in range(max_it):
+    # for i in range(2):
         actions = policy_runner.get_inference_actions()
+        # print("actions: ",actions[0,:])
+        # actions*=0
+        # actions[:,2]=0.2
         # actions *= 0
         # # print(actions.size(),env.phase.size())
         # p = env.phase[:,0]
@@ -180,9 +182,6 @@ def play(args):
         policy_runner.set_actions(actions)
         env.step()
         policy_runner.reset_envs()
-
-        print("actions:\r\n",actions[0,:])
-        # print("base_ang_vel:\r\n",env.base_ang_vel[0,:])
         # print("base_ang_vel:\r\n",env.base_ang_vel[0,:])
         # print("projected_gravity:\r\n",env.projected_gravity[0,:])
         # print("commands:\r\n",env.commands[0,:])
@@ -190,8 +189,8 @@ def play(args):
         # print("phase_cos:\r\n",env.phase_cos[0,:])
         # print("dof_pos:\r\n",env.dof_pos[0,:])
         # print("dof_vel:\r\n",env.dof_vel[0,:])
-        # print("foot_states:\r\n",env.foot_states_right[0,:])
-        # print("foot_states:\r\n",env.foot_states_left[0,:])
+        # print("foot_states_right:\r\n",env.foot_states_right[0,:])
+        # print("foot_states_left:\r\n",env.foot_states_left[0,:])
         # print("standing_command_mask:\r\n",env.standing_command_mask[0,:])
         # if env.screenshot:
         #     image = env.gym.get_camera_image(env.sim, env.envs[0], env.camera_handle, isaacgym.gymapi.IMAGE_COLOR)
@@ -225,13 +224,13 @@ def play(args):
                 env.commands[:, 1] = 0.0
                 env.commands[:, 2] = -1.0
                 print("wz = ", env.commands[0, 2])
-        foot_contact, foot_air_time, air_mask, time_rew, rew = env._reward_air_time(
-            debug=True
-        )
-        merged_tensor = torch.cat(
-            [foot_contact, foot_air_time, air_mask, time_rew, rew.unsqueeze(1)], dim=1
-        )[0, :]
-        data_queue.put(merged_tensor)
+        # foot_contact, foot_air_time, air_mask, time_rew, rew = env._reward_air_time(
+        #     debug=True
+        # )
+        # merged_tensor = torch.cat(
+        #     [foot_contact, foot_air_time, air_mask, time_rew, rew.unsqueeze(1)], dim=1
+        # )[0, :]
+        # data_queue.put(merged_tensor)
 
         if RENDER:
             env.gym.fetch_results(env.sim, True)
@@ -249,7 +248,7 @@ def play(args):
 
 if __name__ == "__main__":
     EXPORT_POLICY = True  # True, False
-    CUSTOM_COMMANDS = True  # True, False
+    CUSTOM_COMMANDS = False  # True, False
     MOVE_CAMERA = False  # True, False
     LIVE_PLOT = False  # True, False
     RECORD_FRAMES = True  # True, False

@@ -34,6 +34,46 @@ from scipy.signal import correlate
 import torch.nn.functional as F
 
 
+@torch.jit.script
+def torch_rand_float_2(lower, midupper, midlower, upper, shape, device):
+    # type: (float, float, float, float, Tuple[int, int], str) -> Tensor
+    """
+    生成在两个不连续区间内的随机浮点数:
+    [lower, midupper] 和 [midlower, upper]
+
+    参数:
+        lower: 第一个区间的下限
+        upper: 第二个区间的上限
+        midupper: 第一个区间的上限 (必须小于 midlower)
+        midlower: 第二个区间的下限 (必须大于 midupper)
+        shape: 输出张量的形状
+        device: 计算设备
+
+    返回:
+        指定形状的张量，其元素值位于 [lower, midupper] ∪ [midlower, upper]
+    """
+    # 验证输入参数的有效性
+    assert midupper < midlower, "midupper must be less than midlower"
+
+    # 计算两个区间的长度
+    range1 = midupper - lower
+    range2 = upper - midlower
+
+    # 生成随机数
+    rand_vals = torch.rand(*shape, device=device)
+
+    # 将随机数映射到两个区间
+    # 首先将随机数缩放到总范围 [0, range1 + range2]
+    scaled = rand_vals * (range1 + range2)
+
+    # 然后根据值的大小决定分配到哪个区间
+    result = torch.where(
+        scaled < range1, scaled + lower, scaled - range1 + midlower  # 第一个区间
+    )  # 第二个区间
+
+    return result
+
+
 class H1Controller(LeggedRobot):
     cfg: H1ControllerCfg
 
@@ -294,6 +334,16 @@ class H1Controller(LeggedRobot):
         self.contact_schedule = torch.zeros(
             self.num_envs, 1, dtype=torch.float, device=self.device, requires_grad=False
         )
+        self.standing_command_mask = torch.zeros(
+            self.num_envs, 1, dtype=torch.int64, device=self.device, requires_grad=False
+        )
+        self.command_catrgories = torch.randint(
+            0,
+            5,
+            (self.num_envs, 1),
+            device=self.device,
+            requires_grad=False,
+        ).squeeze(1)
 
     def _compute_torques(self):
         self.desired_pos_target = self.dof_pos_target + self.default_dof_pos
@@ -306,6 +356,7 @@ class H1Controller(LeggedRobot):
         kd = self.d_gains.clone()
 
         torques = kp * (q_des - q) + kd * (qd_des - qd) + tau_ff
+        # print("q: ",q[0,:])
 
         torques = torch.clip(torques, -self.torque_limits, self.torque_limits)
 
@@ -313,7 +364,59 @@ class H1Controller(LeggedRobot):
 
     def _resample_commands(self, env_ids):
         """Randomly select foot step commands one/two steps ahead"""
-        super()._resample_commands(env_ids)
+        self.command_catrgories[env_ids] = torch.randint(
+            1,
+            5,
+            (len(env_ids), 1),
+            device=self.device,
+            requires_grad=False,
+        ).squeeze(1)
+        # 0 is standing，vel x is 0, vel y is 0, ang vel yaw is 0
+        # 1 is walking in sagittal, vel y is 0, ang vel yaw is 0
+        # 2 is walking laterally, vel x is 0, ang vel yaw is 0
+        # 3 is rotating in place, vel x is 0, vel y is 0
+        # 4 is omnidirectional walking, all commands are random
+        self.commands[env_ids, 0] = torch_rand_float_2(
+            self.command_ranges["lin_vel_x"][0],
+            -0.2,
+            0.2,
+            self.command_ranges["lin_vel_x"][1],
+            (len(env_ids), 1),
+            device=self.device,
+        ).squeeze(1)
+        self.commands[env_ids, 1] = torch_rand_float_2(
+            -self.command_ranges["lin_vel_y"],
+            -0.2,
+            0.2,
+            self.command_ranges["lin_vel_y"],
+            (len(env_ids), 1),
+            device=self.device,
+        ).squeeze(1)
+        self.commands[env_ids, 2] = torch_rand_float_2(
+            -self.command_ranges["yaw_vel"],
+            -0.2,
+            0.2,
+            self.command_ranges["yaw_vel"],
+            (len(env_ids), 1),
+            device=self.device,
+        ).squeeze(1)
+        if torch.any(self.command_catrgories == 1):
+            self.commands[self.command_catrgories == 1, 1] = 0
+            self.commands[self.command_catrgories == 1, 2] = 0
+            self.standing_command_mask[self.command_catrgories == 1] = 0
+        if torch.any(self.command_catrgories == 2):
+            self.commands[self.command_catrgories == 2, 0] = 0
+            self.commands[self.command_catrgories == 2, 2] = 0
+            self.standing_command_mask[self.command_catrgories == 2] = 0
+        if torch.any(self.command_catrgories == 3):
+            self.commands[self.command_catrgories == 3, 0] = 0
+            self.commands[self.command_catrgories == 3, 1] = 0
+            self.standing_command_mask[self.command_catrgories == 3] = 0
+        if torch.any(self.command_catrgories == 0):
+            self.commands[self.command_catrgories == 0, 0] = 0
+            self.commands[self.command_catrgories == 0, 1] = 0
+            self.commands[self.command_catrgories == 0, 2] = 0
+            self.standing_command_mask[self.command_catrgories == 0] = 1
 
         self.step_period[env_ids] = torch.randint(
             low=self.command_ranges["sample_period"][0],
@@ -419,7 +522,7 @@ class H1Controller(LeggedRobot):
 
         self.update_count += 1
         self.phase_count += 1
-        self.phase += 1 / self.full_step_period
+        self.phase += (1 / self.full_step_period) * 2.0 * torch.pi
 
         # * Ground truth foot contact
         self.last_foot_contact = self.foot_contact.clone()
@@ -796,11 +899,13 @@ class H1Controller(LeggedRobot):
         base_heading = self.base_heading[update_commands_ids]
         c_s = self.c_s[update_commands_ids]  # current step
         CoM = self.CoM[update_commands_ids]
-        T = step_period * self.dt # 半个周期
+        T = step_period * self.dt  # 半个周期
         w = self.w[update_commands_ids]
         dstep_length = torch.norm(commands[:, :2], dim=1, keepdim=True) * T
         dstep_width = self.dstep_width[update_commands_ids]
-        theta = torch.atan2(commands[:, 1:2], commands[:, 0:1]) # theta是足端期望的朝向,将会与base_heading作差计算
+        theta = torch.atan2(
+            commands[:, 1:2], commands[:, 0:1]
+        )  # theta是足端期望的朝向,将会与base_heading作差计算
 
         c_t = torch.cos(theta)
         s_t = torch.sin(theta)
@@ -830,7 +935,7 @@ class H1Controller(LeggedRobot):
             self.step_width[update_commands_ids] = torch.abs(
                 rright_foot_pos_y - rleft_foot_pos_y
             )
-        
+
         self.dstep_length[update_commands_ids] = dstep_length
         self.dstep_width[update_commands_ids] = dstep_width
         # * #################### * #
@@ -873,7 +978,7 @@ class H1Controller(LeggedRobot):
 
         random_step_command[:, 0] = u_x.squeeze(1)  # .clip(max=0.5)
         random_step_command[:, 1] = u_y.squeeze(1)  # .clip(max=0.5)
-        random_step_command[:, 2] = (base_heading+commands[:, 2:3] * T).squeeze(1)
+        random_step_command[:, 2] = (base_heading + commands[:, 2:3] * T).squeeze(1)
 
         return random_step_command
 
@@ -1002,16 +1107,13 @@ class H1Controller(LeggedRobot):
             )
             - self.base_pos,
         )
-        self.step_commands_right[:, 3] = wrap_to_pi(
-            self.step_commands[:, 0, 2]
-        )
-        self.step_commands_left[:, 3] = wrap_to_pi(
-            self.step_commands[:, 1, 2]
-        )
+        self.step_commands_right[:, 3] = wrap_to_pi(self.step_commands[:, 0, 2])
+        self.step_commands_left[:, 3] = wrap_to_pi(self.step_commands[:, 1, 2])
 
-        self.phase_sin = torch.sin(2 * torch.pi * self.phase)
-        self.phase_cos = torch.cos(2 * torch.pi * self.phase)
-
+        self.phase_sin = torch.sin(self.phase)
+        self.phase_cos = torch.cos(self.phase)
+        # print("phase_sin:",self.phase_sin[0,:])
+        # print("phase_cos:",self.phase_cos[0,:])
         self.base_lin_vel_world = self.root_states[:, 7:10].clone()
 
     def check_termination(self):
@@ -1310,7 +1412,8 @@ class H1Controller(LeggedRobot):
     def _reward_tracking_lin_vel(self):
         error = self.commands[:, :2] - self.base_lin_vel[:, :2]
         error *= 1.0 / (1.0 + torch.abs(self.commands[:, :2]))
-        return self._negsqrd_exp(error, a=1.0).sum(dim=1)/2
+        return self._negsqrd_exp(error, a=1.0).sum(dim=1) / 2
+
     # * Stepping Rewards * #
 
     def _reward_joint_regularization(self):
@@ -1386,8 +1489,7 @@ class H1Controller(LeggedRobot):
 
     # ##################### HELPER FUNCTIONS ################################## #
 
-    def smooth_sqr_wave(self, phase):
-        p = 2.0 * torch.pi * phase
+    def smooth_sqr_wave(self, p):
         eps = 0.2
         return torch.sin(p) / torch.sqrt(torch.sin(p) ** 2.0 + eps**2.0)
 

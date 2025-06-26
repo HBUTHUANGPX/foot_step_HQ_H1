@@ -45,7 +45,7 @@ from gym.scripts import pin_mj
 
 
 class cmd:
-    vx = 0.0
+    vx = 2.0
     vy = 0.0
     dyaw = 0.0
 
@@ -138,30 +138,35 @@ def plot_data(data_queue):
     print("plot_data")
     plt.ion()  # 开启交互模式
 
-    # 计算行数和列数
-    rows = math.floor(math.sqrt(plot_num))
-    cols = math.ceil(plot_num / rows)
-
-    fig, axs = plt.subplots(rows, cols, figsize=(10, 12))  # 创建子图
-    axs = axs.flatten()  # 将二维数组展平成一维数组，方便索引
-
-    lines = [ax.plot([], [])[0] for ax in axs]  # 初始化每个子图的线条
-    xdata = [[] for _ in range(plot_num)]  # 存储每个子图的 x 数据
-    ydata = [[] for _ in range(plot_num)]  # 存储每个子图的 y 数据
-
+    
+    first_flag = 1
     while True:
         if not data_queue.empty():
             merged_tensor = data_queue.get()
+            plot_num = merged_tensor.shape[0]
+            if first_flag:
+                first_flag = 0
+                # 计算行数和列数
+                rows = math.floor(math.sqrt(plot_num))
+                cols = math.ceil(plot_num / rows)
+
+                fig, axs = plt.subplots(rows, cols, figsize=(10, 12))  # 创建子图
+                axs = axs.flatten()  # 将二维数组展平成一维数组，方便索引
+
+                lines = [ax.plot([], [])[0] for ax in axs]  # 初始化每个子图的线条
+                xdata = [[0 for _ in range(1000)] for _ in range(plot_num)]  # 存储每个子图的 x 数据
+                ydata = [[0] * 1000 for _ in range(plot_num)]  # 存储每个子图的 y 数据
             for i in range(plot_num):
                 xdata[i].append(len(xdata[i]))
                 ydata[i].append(merged_tensor[i].item())
-                lines[i].set_data(xdata[i], ydata[i])
+                lines[i].set_data(xdata[i][-1000:], ydata[i][-1000:])
                 axs[i].relim()
                 axs[i].autoscale_view()
             # print(len(xdata[i]))
             if len(xdata[i]) % 100 == 0:
                 fig.canvas.draw()
                 fig.canvas.flush_events()
+
         # else:
         #     time.sleep(0.1)
 
@@ -190,15 +195,16 @@ def run_mujoco(policy, cfg: H1ControllerCfg):
     count_csv = 0
 
     phase = 0
-    step_period = 30  # 38#
+    step_period = 15  # 38#
     first_flag = 0
     plot_thread = threading.Thread(target=plot_data, args=(data_queue,))
     plot_thread.daemon = True
     # plot_thread.start()
-    flip_line =  int(0.5*1 / cfg.sim_config.dt)
+    flip_line = int(0.5 * 1 / cfg.sim_config.dt)
     flip_count = 0
     flip_flag = 1
     # for _ in range(int(21)):
+    # for _ in range(int(2001)):
     for _ in range(int(1e166)):
         # for _ in range(int(1+20)):
         # Obtain an observation
@@ -206,7 +212,8 @@ def run_mujoco(policy, cfg: H1ControllerCfg):
         q = q[-cfg.env.num_actuators :]
         dq = dq[-cfg.env.num_actuators :]
         state_tau = state_tau[-cfg.env.num_actuators :]
-        merged_tensor = dq
+        # merged_tensor = dq[-6:]
+        merged_tensor = target_q[-6:]
 
         # data_queue.put(merged_tensor)
         # for i in range(6):
@@ -229,9 +236,12 @@ def run_mujoco(policy, cfg: H1ControllerCfg):
                 full_step_period = step_period * 2
                 phase += 1 / full_step_period
                 # base_ang_vel
+                # obs[0, 0:3] = omega * cfg.scaling.base_ang_vel * 0
                 obs[0, 0:3] = omega * cfg.scaling.base_ang_vel
                 # print("base_ang_vel:\r\n",obs[0, 0:3])
                 # projected_gravity
+                # obs[0, 3:6] = projected_gravity * cfg.scaling.projected_gravity * 0
+                # obs[0, 5] = -1
                 obs[0, 3:6] = projected_gravity * cfg.scaling.projected_gravity
                 # print("projected_gravity:\r\n",obs[0, 3:6])
                 # commands
@@ -254,7 +264,7 @@ def run_mujoco(policy, cfg: H1ControllerCfg):
                 # print("dof_vel:\r\n",obs[0, 23:35])
                 # foot_states_right foot_states_left
                 obs[0, 35:43] = cfg.sim_config.pin_f.get_foot_pos(q)
-                print("foot_states:\r\n",obs[0, 35:43])
+                # print("foot_states:\r\n", obs[0, 35:43])
                 # standing_command_mask
                 obs[0, 43] = 0
                 # print("standing_command_mask:\r\n",obs[0, 43])
@@ -292,6 +302,8 @@ def run_mujoco(policy, cfg: H1ControllerCfg):
             target_dq = np.zeros((cfg.env.num_actuators), dtype=np.double)
             # target_q *= 0
             # target_q[0] = 0.2 * flip_flag
+            # target_q[0]*=0
+            # target_q[0+6]*=0
             tau = pd_control(
                 target_q, q, cfg.robot_config.kps, target_dq, dq, cfg.robot_config.kds
             )  # Calc torques
@@ -343,7 +355,7 @@ if __name__ == "__main__":
             num_observations = 44
 
         class sim_config:
-            mujoco_model_path = f"{LEGGED_GYM_ROOT_DIR}/resources/robots/h1_2_description/h1_2_12dof.xml"
+            mujoco_model_path = f"{LEGGED_GYM_ROOT_DIR}/resources/robots/h1_2_description/mjcf/h1_12dof_release_rl.xml"
             urdf_path = (
                 f"{LEGGED_GYM_ROOT_DIR}/resources/robots/h1_2_description/h1_2.urdf"
             )
@@ -355,9 +367,9 @@ if __name__ == "__main__":
 
         class robot_config:
             # mujoco sim2sim config
-            kps = np.array([200, 200, 200, 300, 40, 40] * 2, dtype=np.double)
-            # kds = np.array([4.5, 4.5, 4.5, 4, 1.0, 0.5] * 2, dtype=np.double)
-            kds = np.array([4.5, 36, 36, 4, 3.0, 0.5] * 2, dtype=np.double)
+            kps = np.array([100, 200, 200, 300, 40, 10] * 2, dtype=np.double)
+            # kds = np.array([4.5, 16, 16, 4, 3.0, 0.5] * 2, dtype=np.double)
+            kds = np.array([8.5, 12, 12, 16, 3.0, 0.4] * 2, dtype=np.double)
             # isaacgym train config
             # kps = np.array([200, 200, 200, 300, 40, 40] * 2, dtype=np.double)
             # kds = np.array([2.5, 2.5, 2.5, 4, 2.0, 2.0] * 2, dtype=np.double)

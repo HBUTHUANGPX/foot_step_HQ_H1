@@ -112,35 +112,34 @@ class H1ControllerCfg(LeggedRobotCfg):
     class control(LeggedRobotCfg.control):
         # stiffness and damping for joints
         stiffness = {
-            "left_hip_yaw_joint": 200.0,
+            "left_hip_yaw_joint": 100.0,
             "left_hip_pitch_joint": 200,
             "left_hip_roll_joint": 200,
             "left_knee_joint": 300,
             "left_ankle_pitch_joint": 40,
-            "left_ankle_roll_joint": 40.0,
-            "right_hip_yaw_joint": 200,
+            "left_ankle_roll_joint": 10.0,
+            "right_hip_yaw_joint": 100,
             "right_hip_pitch_joint": 200,
             "right_hip_roll_joint": 200,
             "right_knee_joint": 300,
             "right_ankle_pitch_joint": 40,
-            "right_ankle_roll_joint": 40,
+            "right_ankle_roll_joint": 10,
         }
         damping = {
-            "left_hip_yaw_joint": 2.5,
-            "left_hip_pitch_joint": 2.5,
-            "left_hip_roll_joint": 2.5,
-            "left_knee_joint": 4.0,
-            "left_ankle_pitch_joint": 2.0,
-            "left_ankle_roll_joint": 2.0,
-            "right_hip_yaw_joint": 2.5,
-            "right_hip_pitch_joint": 2.5,
-            "right_hip_roll_joint": 2.5,
-            "right_knee_joint": 4.0,
-            "right_ankle_pitch_joint": 2.0,
-            "right_ankle_roll_joint": 2.0,
-        }
+            "left_hip_yaw_joint": 8.5,
+            "left_hip_pitch_joint": 12,
+            "left_hip_roll_joint": 12,
+            "left_knee_joint": 16.0,
+            "left_ankle_pitch_joint": 3.0,
+            "left_ankle_roll_joint": 0.5,
 
-        actuation_scale = 0.25
+            "right_hip_yaw_joint": 8.5,
+            "right_hip_pitch_joint": 12,
+            "right_hip_roll_joint": 12,
+            "right_knee_joint": 16.0,
+            "right_ankle_pitch_joint": 3.0,
+            "right_ankle_roll_joint": 0.5,
+        }
         exp_avg_decay = None
         decimation = 10
 
@@ -150,6 +149,8 @@ class H1ControllerCfg(LeggedRobotCfg):
         class physx(LeggedRobotCfg.sim.physx):
             num_threads = 32
             max_gpu_contact_pairs = 2**25  # 2**24 -> needed for 8000 envs and more
+            num_position_iterations = 4
+            num_velocity_iterations = 4
 
     class commands(LeggedRobotCfg.commands):
         curriculum = False
@@ -185,8 +186,8 @@ class H1ControllerCfg(LeggedRobotCfg):
         added_mass_range = [-1.0, 1.0]
 
         push_robots = True
-        push_interval_s = 2.5
-        max_push_vel_xy = 0.5
+        push_interval_s = 2.
+        max_push_vel_xy = 0.9
 
         # Add DR for rotor inertia and angular damping
 
@@ -330,7 +331,7 @@ class H1ControllerRunnerCfg(LeggedRobotRunnerCfg):
 
         critic_obs = actor_obs + [
             "base_height",
-            "base_lin_vel_world",
+            "base_lin_vel",
             "step_commands_right",
             "step_commands_left",
         ]
@@ -342,8 +343,8 @@ class H1ControllerRunnerCfg(LeggedRobotRunnerCfg):
             base_lin_vel = 0.05
             base_lin_vel_world = 0.05
             base_heading = 0.01
-            base_ang_vel = 0.05
-            projected_gravity = 0.05
+            base_ang_vel = 0.15
+            projected_gravity = 0.15
             foot_states_right = 0.01
             foot_states_left = 0.01
             step_commands_right = 0.05
@@ -374,7 +375,7 @@ class H1ControllerRunnerCfg(LeggedRobotRunnerCfg):
         policy_class_name = "ActorCriticRecurrent"
         algorithm_class_name = "PPO"
         num_steps_per_env = 24
-        max_iterations = 5000
+        max_iterations = 5001
         run_name = "HQ"
         experiment_name = "U_H1_R"
         save_interval = 100

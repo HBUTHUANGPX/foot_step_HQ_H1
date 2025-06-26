@@ -164,9 +164,9 @@ def play(args):
     scale = 0.2
     env.commands[:, :] = 0
     torch.set_printoptions(precision=32, linewidth=80, sci_mode=False)
-    for i in range(5):
-    # for i in range(max_it):
-        print(f"============= {i} ===================")
+    # for i in range(5):
+    for i in range(max_it):
+        # print(f"============= {i} ===================")
         actions = policy_runner.get_inference_actions()
         # actions *= 0
         # # print(actions.size(),env.phase.size())
@@ -181,7 +181,7 @@ def play(args):
         env.step()
         policy_runner.reset_envs()
 
-        print("actions:\r\n",actions[0,:])
+        # print("actions:\r\n",actions[0,:])
         # print("base_ang_vel:\r\n",env.base_ang_vel[0,:])
         # print("base_ang_vel:\r\n",env.base_ang_vel[0,:])
         # print("projected_gravity:\r\n",env.projected_gravity[0,:])

@@ -63,14 +63,15 @@ def plot_data(data_queue):
 def play(args):
     env: H1Controller
     env_cfg, train_cfg = task_registry.get_cfgs(args)
-    env_cfg.env.num_envs = min(env_cfg.env.num_envs, 9)
+    env_cfg.env.num_envs = min(env_cfg.env.num_envs, 4 * 4)
     env_cfg.env.env_spacing = 2.0
     env_cfg.env.episode_length_s = int(1e7)  # 5, int(1e7)
+
     env_cfg.seed = 1
     env_cfg.domain_rand.randomize_friction = False
-    env_cfg.terrain.num_cols = 5
-    env_cfg.terrain.num_rows = 5
-    env_cfg.terrain.terrain_proportions = [1.0, 0., 0., 0., 0., 0.0, 0.0]
+    env_cfg.terrain.num_cols = 2
+    env_cfg.terrain.num_rows = 2
+    env_cfg.terrain.terrain_proportions = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     env_cfg.domain_rand.push_robots = False  # True
     env_cfg.init_state.reset_mode = (
         "reset_to_basic"  # 'reset_to_basic', 'reset_to_range'
@@ -81,16 +82,11 @@ def play(args):
     env_cfg.viewer.pos = [0, -2.5, 0.5]  # [0, -3.5, 3]
     # env_cfg.viewer.lookat = [0, 0, 0] # [1, 1.5, 0]
     env_cfg.viewer.lookat = [0, 0.5, 0]  # [1, 1.5, 0]
-    env_cfg.commands.ranges.lin_vel_x = [0.0, 1.0]  # [0., 0.], [-2., 2.]
-    env_cfg.commands.ranges.lin_vel_y = 0.0  # 0., 1.
-    env_cfg.commands.ranges.yaw_vel = 0.0  # 0., 1.
 
     env_cfg.commands.adjust_step_command = False  # True, False
     env_cfg.commands.adjust_prob = 0.05
     env_cfg.commands.sample_angle_offset = 20
     env_cfg.commands.sample_radius_offset = 0.05  # 0.05
-
-    env_cfg.commands.ranges.dstep_width = [0.3, 0.3]
     # env_cfg.asset.fix_base_link = True
     # * prepare environment
     env, _ = task_registry.make_env(name=args.task, args=args, env_cfg=env_cfg)
@@ -132,16 +128,16 @@ def play(args):
         camera_properties = gymapi.CameraProperties()
         camera_properties.width = 1920
         camera_properties.height = 1080
-        h1 = env.gym.create_camera_sensor(env.envs[1], camera_properties)
+        h1 = env.gym.create_camera_sensor(env.envs[RENDER_ID], camera_properties)
         camera_offset = gymapi.Vec3(1, -1, 0.5)
         camera_rotation = gymapi.Quat.from_axis_angle(
             gymapi.Vec3(-0.3, 0.2, 1), np.deg2rad(135)
         )
-        actor_handle = env.gym.get_actor_handle(env.envs[1], 0)
-        body_handle = env.gym.get_actor_rigid_body_handle(env.envs[1], actor_handle, 0)
+        actor_handle = env.gym.get_actor_handle(env.envs[RENDER_ID], 0)
+        body_handle = env.gym.get_actor_rigid_body_handle(env.envs[RENDER_ID], actor_handle, 0)
         env.gym.attach_camera_to_body(
             h1,
-            env.envs[1],
+            env.envs[RENDER_ID],
             body_handle,
             gymapi.Transform(camera_offset, camera_rotation),
             gymapi.FOLLOW_POSITION,
@@ -207,24 +203,30 @@ def play(args):
             elif (i + 1) == 600:
                 env.commands[:, 0] = -2.0
                 print("vx = ", env.commands[0, 0])
-            elif (i + 1) == 900:
+            elif (i + 1) == 1100:
                 env.commands[:, 0] = 0.0
                 env.commands[:, 1] = 1.0
                 print("vy = ", env.commands[0, 1])
-            elif (i + 1) == 1200:
+            elif (i + 1) == 1600:
                 env.commands[:, 0] = 0.0
                 env.commands[:, 1] = -1.0
                 print("vy = ", env.commands[0, 1])
-            elif (i + 1) == 1500:
+            elif (i + 1) == 2100:
                 env.commands[:, 0] = 0.0
                 env.commands[:, 1] = 0.0
                 env.commands[:, 2] = 1.0
                 print("wz = ", env.commands[0, 2])
-            elif (i + 1) == 1800:
+            elif (i + 1) == 2600:
                 env.commands[:, 0] = 0.0
                 env.commands[:, 1] = 0.0
                 env.commands[:, 2] = -1.0
                 print("wz = ", env.commands[0, 2])
+            elif (i + 1) == 3100:
+                env.commands[:, 0] = 0.0
+                env.commands[:, 1] = 0.0
+                env.commands[:, 2] = 0.0
+                print("wz = ", env.commands[0, 2])
+                break
         foot_contact, foot_air_time, air_mask, time_rew, rew = env._reward_air_time(
             debug=True
         )
@@ -237,7 +239,7 @@ def play(args):
             env.gym.fetch_results(env.sim, True)
             env.gym.step_graphics(env.sim)
             env.gym.render_all_camera_sensors(env.sim)
-            img = env.gym.get_camera_image(env.sim, env.envs[1], h1, gymapi.IMAGE_COLOR)
+            img = env.gym.get_camera_image(env.sim, env.envs[RENDER_ID], h1, gymapi.IMAGE_COLOR)
             img = np.reshape(img, (1080, 1920, 4))
             img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
             img_rgb = img[..., :3]  # 移除alpha通道，获取RGB图像
@@ -256,8 +258,9 @@ if __name__ == "__main__":
     SAVE_CSV = False  # True, False
     SAVE_DICT = False  # True, False
     CHECK_SUCCESS_RATE = False  # True, False
+    RENDER = True  # True, False
+    RENDER_ID = 0
     args = get_args()
-    RENDER = False
     # # * custom loading
     # args.load_files = True # True, False
     # args.load_run = 'Feb06_00-27-24_sf' # load run name

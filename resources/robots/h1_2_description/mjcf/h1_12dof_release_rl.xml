@@ -104,8 +104,8 @@
       <joint name="floating_base_joint" type="free" limited="false"/>
 
       <!-- <joint type='slide' axis='1 0 0' limited='false' />
-      <joint type='slide' axis='0 1 0' limited='false' /> -->
-      <!-- <joint type='slide' axis='0 0 1' limited='false' />
+      <joint type='slide' axis='0 1 0' limited='false' />
+      <joint type='slide' axis='0 0 1' limited='false' />
       <joint type='ball' limited='false' /> -->
 
 

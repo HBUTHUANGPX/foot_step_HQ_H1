@@ -126,6 +126,7 @@ class BaseTask:
             obs = getattr(self, name)
         if torch.isnan(obs).any():
             print("this tensor has nan: ",name)
+        # print(f"{name}:{obs.size()}")
         return obs
 
     def set_states(self, state_list, values):

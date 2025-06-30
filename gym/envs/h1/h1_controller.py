@@ -346,7 +346,9 @@ class H1Controller(LeggedRobot):
         ).squeeze(1)
 
     def _compute_torques(self):
-        self.desired_pos_target = self.dof_pos_target + self.default_dof_pos
+        self.desired_pos_target = (
+            self.dof_pos_target * self.cfg.env.action_scale + self.default_dof_pos
+        )
         q = self.dof_pos.clone()
         qd = self.dof_vel.clone()
         q_des = self.desired_pos_target.clone()
@@ -365,7 +367,7 @@ class H1Controller(LeggedRobot):
     def _resample_commands(self, env_ids):
         """Randomly select foot step commands one/two steps ahead"""
         self.command_catrgories[env_ids] = torch.randint(
-            1,
+            0,
             5,
             (len(env_ids), 1),
             device=self.device,
@@ -1110,8 +1112,8 @@ class H1Controller(LeggedRobot):
         self.step_commands_right[:, 3] = wrap_to_pi(self.step_commands[:, 0, 2])
         self.step_commands_left[:, 3] = wrap_to_pi(self.step_commands[:, 1, 2])
 
-        self.phase_sin = torch.sin(self.phase)
-        self.phase_cos = torch.cos(self.phase)
+        self.phase_sin = torch.sin(self.phase * (1 - self.standing_command_mask))
+        self.phase_cos = torch.cos(self.phase * (1 - self.standing_command_mask))
         # print("phase_sin:",self.phase_sin[0,:])
         # print("phase_cos:",self.phase_cos[0,:])
         self.base_lin_vel_world = self.root_states[:, 7:10].clone()
@@ -1155,16 +1157,17 @@ class H1Controller(LeggedRobot):
         self.extras["update_count"] = self.update_count
 
     def _visualization(self):
-        self.gym.clear_lines(self.viewer)
-        self._draw_heightmap_vis()
+        # self.gym.clear_lines(self.viewer)
+        # self._draw_heightmap_vis()
         # self._draw_debug_vis()
         # self._draw_velocity_arrow_vis()
-        self._draw_world_velocity_arrow_vis()
+        # self._draw_world_velocity_arrow_vis()
         # self._draw_base_pos_vis()
         # self._draw_CoM_vis()
         # self._draw_raibert_vis()
-        self._draw_step_vis()
-        self._draw_step_command_vis()
+        # self._draw_step_vis()
+        # self._draw_step_command_vis()
+        ...
 
     def _draw_debug_vis(self):
         """Draws anything for debugging for humanoid"""
@@ -1414,7 +1417,7 @@ class H1Controller(LeggedRobot):
         error *= 1.0 / (1.0 + torch.abs(self.commands[:, :2]))
         return self._negsqrd_exp(error, a=1.0).sum(dim=1) / 2
 
-    # * Stepping Rewards * #
+    # * Stepping Rewards for walking* #
 
     def _reward_joint_regularization(self):
         # Reward joint poses and symmetry
@@ -1427,7 +1430,7 @@ class H1Controller(LeggedRobot):
         error += self._negsqrd_exp((self.dof_pos[:, 1]) / self.scales["dof_pos"])
         error += self._negsqrd_exp((self.dof_pos[:, 6]) / self.scales["dof_pos"])
 
-        return error / 4
+        return error / 4 * (1 - self.standing_command_mask.squeeze(1))
 
     def _reward_contact_schedule(self):
         """Alternate right and left foot contacts
@@ -1441,14 +1444,18 @@ class H1Controller(LeggedRobot):
         tracking_rewards = k * self._neg_exp(
             self.step_location_offset[~self.foot_on_motion], a=a
         )
-        return contact_rewards * tracking_rewards
+        return (
+            contact_rewards
+            * tracking_rewards
+            * (1 - self.standing_command_mask.squeeze(1))
+        )
 
     def _reward_contact(self):
         contact_rewards = (
             self.foot_contact[:, 0].int() - self.foot_contact[:, 1].int()
         ) * self.contact_schedule.squeeze(1)
 
-        return contact_rewards
+        return contact_rewards * (1 - self.standing_command_mask.squeeze(1))
 
     def _reward_air_time(self, debug=False):
         self.foot_air_time += self.dt * (1 - self.foot_contact.int())
@@ -1474,7 +1481,7 @@ class H1Controller(LeggedRobot):
                 rew,
             )
         else:
-            return rew
+            return rew * (1 - self.standing_command_mask.squeeze(1))
 
     def _reward_tracking(self):
         k = 3.0
@@ -1482,10 +1489,22 @@ class H1Controller(LeggedRobot):
         tracking_rewards = k * self._neg_exp(
             self.step_location_offset[~self.foot_on_motion], a=a
         )
-        return tracking_rewards
+        return tracking_rewards * (1 - self.standing_command_mask.squeeze(1))
 
     def _reward_hip_pos(self):
         return -torch.sum(torch.square(self.dof_pos[:, [0, 2, 6, 8]]), dim=1)
+
+    # * Stepping Rewards for standing* #
+    def _reward_stand_joint_regularization(self):
+        # Reward joint poses and symmetry
+        error = self._negsqrd_exp(self.dof_pos).sum(dim=1)
+        return error / 12 * self.standing_command_mask.squeeze(1)
+
+    def _reward_stand_contact(self):
+        contact_rewards = torch.logical_and(
+            self.foot_contact[:, 0], self.foot_contact[:, 1]
+        ).int()
+        return contact_rewards * self.standing_command_mask.squeeze(1)
 
     # ##################### HELPER FUNCTIONS ################################## #
 

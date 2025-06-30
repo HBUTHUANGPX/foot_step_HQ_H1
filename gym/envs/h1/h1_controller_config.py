@@ -11,12 +11,13 @@ class H1ControllerCfg(LeggedRobotCfg):
     class env(LeggedRobotCfg.env):
         num_envs = 4096
         num_actuators = 12
-        episode_length_s = 8  # 100
+        episode_length_s = 25  # 100
+        action_scale = 1.0#0.25
 
     class terrain(LeggedRobotCfg.terrain):
         curriculum = False
         mesh_type = "trimesh"  # 'plane' 'heightfield' 'trimesh'
-        horizontal_scale = 0.1 
+        horizontal_scale = 0.1
         vertical_scale = 0.005  # [m]
         selected = False  # True, False
         measure_heights = False
@@ -32,10 +33,11 @@ class H1ControllerCfg(LeggedRobotCfg):
         # terrain types: [pyramid_sloped, random_uniform, stairs down, stairs up, discrete obstacles, stepping_stones, gap, pit]
         num_rows = 20  # number of terrain rows (levels)
         num_cols = 10  # number of terrain cols (types)
-        terrain_proportions = [0.2, 0.8, 0., 0., 0., 0.0, 0.0]
+        terrain_proportions = [0.7, 0.3, 0.0, 0.0, 0.0, 0.0, 0.0]
         slope_treshold = (
-            0.75  # slopes above this threshold will be corrected to vertical surfaces
+            1  # slopes above this threshold will be corrected to vertical surfaces
         )
+
     class init_state(LeggedRobotCfg.init_state):
         # reset_mode = 'reset_to_range' # 'reset_to_basic'
         reset_mode = "reset_to_basic"  # 'reset_to_basic'
@@ -113,28 +115,27 @@ class H1ControllerCfg(LeggedRobotCfg):
         # stiffness and damping for joints
         stiffness = {
             "left_hip_yaw_joint": 100.0,
-            "left_hip_pitch_joint": 200,
-            "left_hip_roll_joint": 200,
+            "left_hip_pitch_joint": 150,
+            "left_hip_roll_joint": 150,
             "left_knee_joint": 300,
             "left_ankle_pitch_joint": 40,
             "left_ankle_roll_joint": 10.0,
             "right_hip_yaw_joint": 100,
-            "right_hip_pitch_joint": 200,
-            "right_hip_roll_joint": 200,
+            "right_hip_pitch_joint": 150,
+            "right_hip_roll_joint": 150,
             "right_knee_joint": 300,
             "right_ankle_pitch_joint": 40,
             "right_ankle_roll_joint": 10,
         }
         damping = {
-            "left_hip_yaw_joint": 8.5,
-            "left_hip_pitch_joint": 12,
+            "left_hip_yaw_joint": 10.5,
+            "left_hip_pitch_joint": 18,
             "left_hip_roll_joint": 12,
             "left_knee_joint": 16.0,
             "left_ankle_pitch_joint": 3.0,
             "left_ankle_roll_joint": 0.5,
-
-            "right_hip_yaw_joint": 8.5,
-            "right_hip_pitch_joint": 12,
+            "right_hip_yaw_joint": 10.5,
+            "right_hip_pitch_joint": 18,
             "right_hip_roll_joint": 12,
             "right_knee_joint": 16.0,
             "right_ankle_pitch_joint": 3.0,
@@ -147,16 +148,16 @@ class H1ControllerCfg(LeggedRobotCfg):
         dt = 0.002
 
         class physx(LeggedRobotCfg.sim.physx):
-            num_threads = 32
-            max_gpu_contact_pairs = 2**25  # 2**24 -> needed for 8000 envs and more
+            num_threads = 16
+            max_gpu_contact_pairs = 2**24  # 2**24 -> needed for 8000 envs and more
             num_position_iterations = 4
-            num_velocity_iterations = 4
+            num_velocity_iterations = 0
 
     class commands(LeggedRobotCfg.commands):
         curriculum = False
         max_curriculum = 1.0
         num_commands = 3
-        resampling_time = 10.0  # 5.
+        resampling_time = 13.0  # 5.
 
         succeed_step_radius = 0.03
         succeed_step_angle = 10
@@ -186,7 +187,7 @@ class H1ControllerCfg(LeggedRobotCfg):
         added_mass_range = [-1.0, 1.0]
 
         push_robots = True
-        push_interval_s = 2.
+        push_interval_s = 2.0
         max_push_vel_xy = 0.9
 
         # Add DR for rotor inertia and angular damping
@@ -251,8 +252,8 @@ class H1ControllerCfg(LeggedRobotCfg):
 
         class weights(LeggedRobotCfg.rewards.weights):
             # * Regularization rewards * #
-            actuation_rate = 1e-2
-            actuation_rate2 = 1e-2
+            actuation_rate = 0.01 #* 16
+            actuation_rate2 = 0.01 #* 16
             torques = 1e-4
             dof_vel = 1e-3
             lin_vel_z = 1e-1
@@ -266,17 +267,21 @@ class H1ControllerCfg(LeggedRobotCfg):
             # base_z_orientation = 1.0
             # tracking_lin_vel_world = 4.0
             tracking_lin_vel = 4.0
-            base_yaw_vel = 12.0#6.0
+            base_yaw_vel = 12.0  # 6.0
             base_roll = 5.0
             base_pitch = 5.0
 
             # * Stepping rewards * #
             joint_regularization = 1.0
             contact_schedule = 7.0
+
+            stand_joint_regularization = 1.0
+            stand_contact = 7.0
             # contact = 1.0
             tracking = 4.0
             air_time = 1.0
             hip_pos = 10.0
+
         class termination_weights(LeggedRobotCfg.rewards.termination_weights):
             termination = 1.0
 
@@ -306,13 +311,13 @@ class H1ControllerRunnerCfg(LeggedRobotRunnerCfg):
         # actor_hidden_dims = [1024,512,256,64]
         # critic_hidden_dims = [1024,512,256,64]
         # test 1
-        actor_hidden_dims = [512,256,128,32]
-        critic_hidden_dims = [512,256,128,32]
+        actor_hidden_dims = [512, 256, 128, 32]
+        critic_hidden_dims = [512, 256, 128, 32]
         # (elu, relu, selu, crelu, lrelu, tanh, sigmoid)
         activation = "tanh"
         normalize_obs = False  # True, False
 
-        rnn_type = 'lstm'
+        rnn_type = "lstm"
         rnn_hidden_size = 64
         rnn_num_layers = 1
         actor_obs = [

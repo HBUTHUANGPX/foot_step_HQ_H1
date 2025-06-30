@@ -138,7 +138,6 @@ def plot_data(data_queue):
     print("plot_data")
     plt.ion()  # 开启交互模式
 
-    
     first_flag = 1
     while True:
         if not data_queue.empty():
@@ -154,7 +153,9 @@ def plot_data(data_queue):
                 axs = axs.flatten()  # 将二维数组展平成一维数组，方便索引
 
                 lines = [ax.plot([], [])[0] for ax in axs]  # 初始化每个子图的线条
-                xdata = [[0 for _ in range(1000)] for _ in range(plot_num)]  # 存储每个子图的 x 数据
+                xdata = [
+                    [0 for _ in range(1000)] for _ in range(plot_num)
+                ]  # 存储每个子图的 x 数据
                 ydata = [[0] * 1000 for _ in range(plot_num)]  # 存储每个子图的 y 数据
             for i in range(plot_num):
                 xdata[i].append(len(xdata[i]))
@@ -163,7 +164,7 @@ def plot_data(data_queue):
                 axs[i].relim()
                 axs[i].autoscale_view()
             # print(len(xdata[i]))
-            if len(xdata[i]) % 100 == 0:
+            if len(xdata[i]) % 200 == 0:
                 fig.canvas.draw()
                 fig.canvas.flush_events()
 
@@ -197,9 +198,10 @@ def run_mujoco(policy, cfg: H1ControllerCfg):
     phase = 0
     step_period = 15  # 38#
     first_flag = 0
-    plot_thread = threading.Thread(target=plot_data, args=(data_queue,))
-    plot_thread.daemon = True
-    # plot_thread.start()
+    if cfg.sim_config.plot_flag:
+        plot_thread = threading.Thread(target=plot_data, args=(data_queue,))
+        plot_thread.daemon = True
+        plot_thread.start()
     flip_line = int(0.5 * 1 / cfg.sim_config.dt)
     flip_count = 0
     flip_flag = 1
@@ -212,18 +214,10 @@ def run_mujoco(policy, cfg: H1ControllerCfg):
         q = q[-cfg.env.num_actuators :]
         dq = dq[-cfg.env.num_actuators :]
         state_tau = state_tau[-cfg.env.num_actuators :]
-        # merged_tensor = dq[-6:]
-        merged_tensor = target_q[-6:]
-
-        # data_queue.put(merged_tensor)
-        # for i in range(6):
-        #     tmpq = q[i]
-        #     q[i] = q[i + 6]
-        #     q[i + 6] = tmpq
-
-        #     tmpdq = dq[i]
-        #     dq[i] = dq[i + 6]
-        #     dq[i + 6] = tmpdq
+        if cfg.sim_config.plot_flag:
+            # merged_tensor = dq[-6:]
+            merged_tensor = target_q[-6:]
+            data_queue.put(merged_tensor)
         if count_simlevel % cfg.sim_config.sim_decimation == 0:
             if count_lowlevel % cfg.sim_config.decimation == 0:
                 obs = np.zeros([1, cfg.env.num_single_obs], dtype=np.float32)
@@ -249,10 +243,12 @@ def run_mujoco(policy, cfg: H1ControllerCfg):
                 obs[0, 7] = cmd.vy * cfg.scaling.commands
                 obs[0, 8] = cmd.dyaw * cfg.scaling.commands
                 # print("commands:\r\n",obs[0, 6:9])
+                # standing_command_mask
+                obs[0, 43] = 0
                 # phase_sin
-                obs[0, 9] = math.sin(2 * math.pi * phase)
+                obs[0, 9] = math.sin(2 * math.pi * phase * (1 - obs[0, 43]))
                 # phase_cos
-                obs[0, 10] = math.cos(2 * math.pi * phase)
+                obs[0, 10] = math.cos(2 * math.pi * phase * (1 - obs[0, 43]))
 
                 # print("phase_sin:\r\n",obs[0, 9])
                 # print("phase_cos:\r\n",obs[0, 10])
@@ -265,8 +261,7 @@ def run_mujoco(policy, cfg: H1ControllerCfg):
                 # foot_states_right foot_states_left
                 obs[0, 35:43] = cfg.sim_config.pin_f.get_foot_pos(q)
                 # print("foot_states:\r\n", obs[0, 35:43])
-                # standing_command_mask
-                obs[0, 43] = 0
+
                 # print("standing_command_mask:\r\n",obs[0, 43])
 
                 obs = np.clip(
@@ -364,15 +359,17 @@ if __name__ == "__main__":
             dt = 0.002
             decimation = 10
             sim_decimation = 1
+            plot_flag = False  # True , False
 
         class robot_config:
             # mujoco sim2sim config
-            kps = np.array([100, 200, 200, 300, 40, 10] * 2, dtype=np.double)
-            # kds = np.array([4.5, 16, 16, 4, 3.0, 0.5] * 2, dtype=np.double)
-            kds = np.array([8.5, 12, 12, 16, 3.0, 0.4] * 2, dtype=np.double)
+            kps = np.array([100, 150, 150, 300, 40, 10] * 2, dtype=np.double)
+            kds = np.array([25.5, 18, 12, 16, 3.0, 0.4] * 2, dtype=np.double)
+            # kds = np.array([8.5, 16, 16, 16, 3.0, 0.4] * 2, dtype=np.double)
             # isaacgym train config
             # kps = np.array([200, 200, 200, 300, 40, 40] * 2, dtype=np.double)
             # kds = np.array([2.5, 2.5, 2.5, 4, 2.0, 2.0] * 2, dtype=np.double)
+            print(kps)
             print(kds)
             tau_limit = np.array([200, 200, 200, 300, 60, 40] * 2, dtype=np.double)
 

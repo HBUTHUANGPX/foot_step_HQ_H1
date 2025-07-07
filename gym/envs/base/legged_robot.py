@@ -522,10 +522,14 @@ class LeggedRobot(BaseTask):
 
     def _push_robots(self):
         """Random pushes the robots. Emulates an impulse by setting a randomized base velocity."""
-        max_vel = self.cfg.domain_rand.max_push_vel_xy
-        self.root_states[:, 7:9] += torch_rand_float(
-            -max_vel, max_vel, (self.num_envs, 2), device=self.device
-        )  # lin vel x/y
+        max_vel_x = self.cfg.domain_rand.max_push_vel_x
+        max_vel_y = self.cfg.domain_rand.max_push_vel_y
+        self.root_states[:, 7:8] += torch_rand_float(
+            -max_vel_x, max_vel_x, (self.num_envs, 1), device=self.device
+        )  
+        self.root_states[:, 8:9] += torch_rand_float(
+            -max_vel_y, max_vel_y, (self.num_envs, 1), device=self.device
+        )  
         self.gym.set_actor_root_state_tensor(
             self.sim, gymtorch.unwrap_tensor(self.root_states)
         )
@@ -544,13 +548,13 @@ class LeggedRobot(BaseTask):
             self.root_states[env_ids, :2] - self.env_origins[env_ids, :2], dim=1
         )
         # robots that walked far enough progress to harder terains
-        move_up = distance > self.terrain.env_length / 2
+        move_up = distance > self.terrain.env_length * 0.8
         # robots that walked less than half of their required distance go to simpler terrains
         move_down = (
             distance
-            < torch.norm(self.commands[env_ids, :2], dim=1)
+            < (torch.norm(self.commands[env_ids, :2], dim=1)
             * self.max_episode_length_s
-            * 0.5
+            * 0.2)
         ) * ~move_up
         self.terrain_levels[env_ids] += 1 * move_up - 1 * move_down
         # Robots that solve the last level are sent to a random one

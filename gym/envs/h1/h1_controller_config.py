@@ -12,11 +12,11 @@ class H1ControllerCfg(LeggedRobotCfg):
         num_envs = 4096
         num_actuators = 12
         episode_length_s = 25  # 100
-        action_scale = 1.0#0.25
+        action_scale = 1.0
 
     class terrain(LeggedRobotCfg.terrain):
-        curriculum = False
-        mesh_type = "trimesh"  # 'plane' 'heightfield' 'trimesh'
+        curriculum = False # True, False
+        mesh_type = "plane"  # 'plane' 'heightfield' 'trimesh'
         horizontal_scale = 0.1
         vertical_scale = 0.005  # [m]
         selected = False  # True, False
@@ -32,6 +32,7 @@ class H1ControllerCfg(LeggedRobotCfg):
         platform_size = 5.0
         # terrain types: [pyramid_sloped, random_uniform, stairs down, stairs up, discrete obstacles, stepping_stones, gap, pit]
         num_rows = 20  # number of terrain rows (levels)
+        max_init_terrain_level = num_rows-1 # starting curriculum state
         num_cols = 10  # number of terrain cols (types)
         terrain_proportions = [0.7, 0.3, 0.0, 0.0, 0.0, 0.0, 0.0]
         slope_treshold = (
@@ -149,7 +150,7 @@ class H1ControllerCfg(LeggedRobotCfg):
 
         class physx(LeggedRobotCfg.sim.physx):
             num_threads = 16
-            max_gpu_contact_pairs = 2**24  # 2**24 -> needed for 8000 envs and more
+            max_gpu_contact_pairs = 2**23  # 2**24 -> needed for 8000 envs and more
             num_position_iterations = 4
             num_velocity_iterations = 0
 
@@ -186,9 +187,10 @@ class H1ControllerCfg(LeggedRobotCfg):
         randomize_base_mass = True  # True, False
         added_mass_range = [-1.0, 1.0]
 
-        push_robots = True
-        push_interval_s = 2.0
-        max_push_vel_xy = 0.9
+        push_robots = True# True, False
+        push_interval_s = 4.0
+        max_push_vel_x = 0.6
+        max_push_vel_y = 0.2
 
         # Add DR for rotor inertia and angular damping
 
@@ -252,8 +254,8 @@ class H1ControllerCfg(LeggedRobotCfg):
 
         class weights(LeggedRobotCfg.rewards.weights):
             # * Regularization rewards * #
-            actuation_rate = 0.01 #* 16
-            actuation_rate2 = 0.01 #* 16
+            actuation_rate = 0.01 
+            actuation_rate2 = 0.01
             torques = 1e-4
             dof_vel = 1e-3
             lin_vel_z = 1e-1
@@ -279,11 +281,19 @@ class H1ControllerCfg(LeggedRobotCfg):
             stand_contact = 7.0
             # contact = 1.0
             tracking = 4.0
-            air_time = 1.0
+            feet_airtime = 2.0
+            boundary = -10
             hip_pos = 10.0
+            # alive = 5
 
         class termination_weights(LeggedRobotCfg.rewards.termination_weights):
             termination = 1.0
+            term_contact = 1.0
+            term_base_lin_vel = 1.0
+            term_base_ang_vel = 1.0
+            term_projected_gravity_x = 1.0
+            term_projected_gravity_y = 1.0
+            term_base_pos = 1.0
 
     class scaling(LeggedRobotCfg.scaling):
         base_height = 1.0
@@ -380,7 +390,7 @@ class H1ControllerRunnerCfg(LeggedRobotRunnerCfg):
         policy_class_name = "ActorCriticRecurrent"
         algorithm_class_name = "PPO"
         num_steps_per_env = 24
-        max_iterations = 5001
+        max_iterations = 15001
         run_name = "HQ"
         experiment_name = "U_H1_R"
         save_interval = 100

@@ -127,10 +127,13 @@ class OnPolicyRunner:
         tot_iter = self.current_learning_iteration + num_learning_iterations
         for it in range(self.current_learning_iteration, tot_iter):
             start = time.time()
+            gym_collection_time = 0.0
             # * Rollout
             with torch.inference_mode():
                 for i in range(self.num_steps_per_env):
+                    gym_start = time.time()
                     actions = self.alg.act(actor_obs, critic_obs)
+                    # 关于gym的流程
                     self.set_actions(actions)
                     self.env.step()
 
@@ -138,6 +141,9 @@ class OnPolicyRunner:
                     timed_out = self.get_timed_out()
                     rewards = self.compute_and_get_rewards()
                     self.reset_envs()
+                    gym_end = time.time()
+                    gym_collection_time += gym_end-gym_start
+                    # 关于gym的流程 结束
                     infos = self.get_infos()
 
                     actor_obs = self.get_noisy_obs(self.policy_cfg["actor_obs"])
@@ -273,6 +279,7 @@ class OnPolicyRunner:
                 "Policy/mean_noise_std": mean_std.item(),
                 "Perf/total_fps": fps,
                 "Perf/collection time": locs["collection_time"],
+                "Perf/gym collection time": locs["gym_collection_time"],
                 "Perf/learning_time": locs["learn_time"],
             }
         )
@@ -281,6 +288,11 @@ class OnPolicyRunner:
                 {
                     "Train/mean_reward": statistics.mean(locs["rewbuffer"]),
                     "Train/mean_episode_length": statistics.mean(locs["lenbuffer"]),
+                    "Train/Total timesteps": self.tot_timesteps,
+                    "Train/Total time": self.tot_time,
+                    "Train/ETA": self.tot_time / (locs['it'] + 1) * (
+                               locs['num_learning_iterations'] - locs['it']),
+                    
                 }
             )
         if wandb.run is not None:

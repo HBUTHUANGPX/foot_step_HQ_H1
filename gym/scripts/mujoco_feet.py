@@ -107,7 +107,7 @@ class pin_mj:
         foot_concat_1d = np.concatenate(
             (self.foot_fl_pose_world,[l_yaw] ,self.foot_fr_pose_world,[r_yaw]), axis=0
         )
-        # print("foot_concat_1d in base frame => translation: \n  ", foot_concat_1d)
+        print("foot_concat_1d in base frame => translation: \n  ", foot_concat_1d)
 
         return foot_concat_1d
 
@@ -118,6 +118,6 @@ if __name__ == "__main__":
     robot_patch = "/h1_2_description/h1_2.urdf"
     a = pin_mj(base_path + robot_patch)
     arr = np.array([0] * (12), dtype=float)
-    arr[0] = 0.1
+    arr[1] = 0.2
     hh = a.get_foot_pos(arr)
     # conda install pinocchio -c conda-forge

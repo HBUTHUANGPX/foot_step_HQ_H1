@@ -226,7 +226,8 @@ class BaseTask:
 
         for name in self.termination_reward_names:
             rew = self.termination_reward_weights[name] * self.eval_reward(name)
-            self.rew_buf += rew
+            if name == "termination":
+                self.rew_buf += rew
             self.episode_sums[name] += rew
 
     def eval_reward(self, name):

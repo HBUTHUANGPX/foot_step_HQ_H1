@@ -25,57 +25,72 @@ import torch
 
 import threading
 import queue
+import matplotlib
+# matplotlib.use('Agg')  # 在导入 matplotlib.pyplot 之前设置
 import matplotlib.pyplot as plt
 import time
 import cv2
 from datetime import datetime
 from video_recorder import VideoRecorder
+import math
 
 data_queue = queue.Queue()
-plot_num = 9
+plot_num = 10
 
 
 def plot_data(data_queue):
     print("plot_data")
     plt.ion()  # 开启交互模式
-    fig, axs = plt.subplots(plot_num, 1, figsize=(10, 12))  # 创建 8 个子图
-    lines = [ax.plot([], [])[0] for ax in axs]  # 初始化每个子图的线条
-    xdata = [[] for _ in range(plot_num)]  # 存储每个子图的 x 数据
-    ydata = [[] for _ in range(plot_num)]  # 存储每个子图的 y 数据
+    first_flag = 1
 
     while True:
         if not data_queue.empty():
             merged_tensor = data_queue.get()
-            # print("bb")
+            plot_num = merged_tensor.shape[0]
+            if first_flag:
+                first_flag = 0
+                # 计算行数和列数
+                rows = math.floor(math.sqrt(plot_num))
+                cols = math.ceil(plot_num / rows)
+
+                fig, axs = plt.subplots(rows, cols, figsize=(10, 12))  # 创建子图
+                axs = axs.flatten()  # 将二维数组展平成一维数组，方便索引
+
+                lines = [ax.plot([], [])[0] for ax in axs]  # 初始化每个子图的线条
+                xdata = [
+                    [0 for _ in range(200)] for _ in range(plot_num)
+                ]  # 存储每个子图的 x 数据
+                ydata = [[0] * 200 for _ in range(plot_num)]  # 存储每个子图的 y 数据
             for i in range(plot_num):
                 xdata[i].append(len(xdata[i]))
                 ydata[i].append(merged_tensor[i].item())
-                lines[i].set_data(xdata[i], ydata[i])
+                lines[i].set_data(xdata[i][-200:], ydata[i][-200:])
                 axs[i].relim()
                 axs[i].autoscale_view()
-            fig.canvas.draw()
-            fig.canvas.flush_events()
-        else:
-            # print("cc")
-            time.sleep(0.1)
+            # print(len(xdata[i]))
+            if len(xdata[i]) % 1 == 0:
+                fig.canvas.draw()
+                fig.canvas.flush_events()
 
 
 def play(args):
     env: H1Controller
     env_cfg, train_cfg = task_registry.get_cfgs(args)
-    env_cfg.env.num_envs = min(env_cfg.env.num_envs, 4 * 4)
+    env_cfg.env.num_envs = min(9, env_cfg.terrain.num_cols * env_cfg.terrain.num_rows)
     env_cfg.env.env_spacing = 2.0
     env_cfg.env.episode_length_s = int(1e7)  # 5, int(1e7)
 
     env_cfg.seed = 1
     env_cfg.domain_rand.randomize_friction = False
-    env_cfg.terrain.num_cols = 2
-    env_cfg.terrain.num_rows = 2
-    env_cfg.terrain.terrain_proportions = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    env_cfg.domain_rand.push_robots = False  # True
+    env_cfg.terrain.mesh_type = "plane"
+    # env_cfg.terrain.num_cols = 2
+    # env_cfg.terrain.num_rows = 2
+    # env_cfg.terrain.terrain_proportions = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    env_cfg.domain_rand.push_robots = False  # True, False
     env_cfg.init_state.reset_mode = (
         "reset_to_basic"  # 'reset_to_basic', 'reset_to_range'
     )
+    # env_cfg.init_state.pos = [0.0, 0.0, 1.5243]
     env_cfg.commands.resampling_time = -1  # -1, 3, 5, 15
     env_cfg.commands.curriculum = False  # True, False
     # env_cfg.viewer.pos = [0, -1.5, 1] # [0, -3.5, 3]
@@ -134,7 +149,9 @@ def play(args):
             gymapi.Vec3(-0.3, 0.2, 1), np.deg2rad(135)
         )
         actor_handle = env.gym.get_actor_handle(env.envs[RENDER_ID], 0)
-        body_handle = env.gym.get_actor_rigid_body_handle(env.envs[RENDER_ID], actor_handle, 0)
+        body_handle = env.gym.get_actor_rigid_body_handle(
+            env.envs[RENDER_ID], actor_handle, 0
+        )
         env.gym.attach_camera_to_body(
             h1,
             env.envs[RENDER_ID],
@@ -167,6 +184,7 @@ def play(args):
         # actions *= 0
         # # print(actions.size(),env.phase.size())
         # p = env.phase[:,0]
+        # actions[:, 1] = 0.2
         # actions[:, 1] = torch.sin(2.0 * torch.pi * p) * scale
         # actions[:, 3] = -2 * torch.sin(2.0 * torch.pi * p) * scale
         # actions[:, 4] = torch.sin(2.0 * torch.pi * p) * scale
@@ -227,19 +245,48 @@ def play(args):
                 env.commands[:, 2] = 0.0
                 print("wz = ", env.commands[0, 2])
                 break
-        foot_contact, foot_air_time, air_mask, time_rew, rew = env._reward_air_time(
-            debug=True
-        )
-        merged_tensor = torch.cat(
-            [foot_contact, foot_air_time, air_mask, time_rew, rew.unsqueeze(1)], dim=1
-        )[0, :]
-        data_queue.put(merged_tensor)
+        # foot_contact, foot_air_time, air_mask, time_rew, rew = env._reward_air_time(
+        #     debug=True
+        # )
+        # merged_tensor = torch.cat(
+        #     [foot_contact, foot_air_time, air_mask, time_rew, rew.unsqueeze(1)], dim=1
+        # )[0, :]
+        # data_queue.put(merged_tensor)
+
+        (
+            contact,
+            contact_filt,
+            feet_air_time,
+            air_time_reward,
+            _rew,
+            standing_command_mask,
+        ) = env._reward_feet_airtime(play=True)
+        # print(standing_command_mask.size())
+        # print(contact.size())
+        # print(contact_filt.size())
+        # print(feet_air_time.size())
+        # print(air_time_reward.size())
+        # print(_rew.size())
+        # merged_tensor = torch.cat(
+        #     [
+        #         contact,
+        #         contact_filt,
+        #         feet_air_time,
+        #         air_time_reward,
+        #         _rew.unsqueeze(1),
+        #         standing_command_mask.unsqueeze(1),
+        #     ],
+        #     dim=1,
+        # )[1, :]
+        # data_queue.put(merged_tensor)
 
         if RENDER:
             env.gym.fetch_results(env.sim, True)
             env.gym.step_graphics(env.sim)
             env.gym.render_all_camera_sensors(env.sim)
-            img = env.gym.get_camera_image(env.sim, env.envs[RENDER_ID], h1, gymapi.IMAGE_COLOR)
+            img = env.gym.get_camera_image(
+                env.sim, env.envs[RENDER_ID], h1, gymapi.IMAGE_COLOR
+            )
             img = np.reshape(img, (1080, 1920, 4))
             img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
             img_rgb = img[..., :3]  # 移除alpha通道，获取RGB图像
@@ -254,11 +301,10 @@ if __name__ == "__main__":
     CUSTOM_COMMANDS = True  # True, False
     MOVE_CAMERA = False  # True, False
     LIVE_PLOT = False  # True, False
-    RECORD_FRAMES = True  # True, False
     SAVE_CSV = False  # True, False
     SAVE_DICT = False  # True, False
     CHECK_SUCCESS_RATE = False  # True, False
-    RENDER = True  # True, False
+    RENDER = False  # True, False
     RENDER_ID = 0
     args = get_args()
     # # * custom loading

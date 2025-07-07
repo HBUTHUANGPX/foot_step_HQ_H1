@@ -345,6 +345,30 @@ class H1Controller(LeggedRobot):
             requires_grad=False,
         ).squeeze(1)
 
+        # 
+        self.feet_air_time = torch.zeros(
+            self.num_envs,
+            self.feet_ids.shape[0],
+            dtype=torch.float,
+            device=self.device,
+            requires_grad=False,
+        )
+        self.quadrilateral_point = torch.zeros(
+            self.num_envs,
+            4,
+            2,
+            dtype=torch.float,
+            device=self.device,
+            requires_grad=False,
+        )
+        self.step_pos = torch.zeros(
+            self.num_envs,
+            len(self.feet_ids),
+            3,
+            dtype=torch.float,
+            device=self.device,
+            requires_grad=False,
+        )
     def _compute_torques(self):
         self.desired_pos_target = (
             self.dof_pos_target * self.cfg.env.action_scale + self.default_dof_pos
@@ -478,6 +502,9 @@ class H1Controller(LeggedRobot):
         self.dstep_length[env_ids] = self.cfg.commands.dstep_length
         self.dstep_width[env_ids] = self.cfg.commands.dstep_width
 
+        # 
+        self.feet_air_time[env_ids] = 0.0
+
     def _post_physics_step_callback(self):
         super()._post_physics_step_callback()
 
@@ -552,6 +579,21 @@ class H1Controller(LeggedRobot):
         self.ankle_vel_history[:, 1, :naxis] = self.rigid_body_state[
             :, self.rigid_body_idx["left_ankle_roll_link"], 7:10
         ]
+
+        self.step_pos[:, :, :2] = self.rigid_body_state[:, self.feet_ids, :2]
+        self.step_pos[:, :, 2] = self.rigid_body_state[:, self.feet_ids, 5]
+        # 左上
+        self.quadrilateral_point[:, 0, 0] = self.step_pos[:, 0, 0] + 0.17
+        self.quadrilateral_point[:, 0, 1] = self.step_pos[:, 0, 1] + 0.04
+        # 左下
+        self.quadrilateral_point[:, 1, 0] = self.step_pos[:, 0, 0] - 0.08
+        self.quadrilateral_point[:, 1, 1] = self.step_pos[:, 0, 1] + 0.04
+        # 右下
+        self.quadrilateral_point[:, 2, 0] = self.step_pos[:, 1, 0] - 0.08
+        self.quadrilateral_point[:, 2, 1] = self.step_pos[:, 1, 1] - 0.04
+        # 右上
+        self.quadrilateral_point[:, 3, 0] = self.step_pos[:, 1, 0] + 0.17
+        self.quadrilateral_point[:, 3, 1] = self.step_pos[:, 1, 1] - 0.04
 
     def _calculate_foot_states(self, foot_states):
         foot_height_vec = (
@@ -1121,25 +1163,40 @@ class H1Controller(LeggedRobot):
     def check_termination(self):
         """Check if environments need to be reset"""
         # * Termination for contact
-        term_contact = torch.norm(
-            self.contact_forces[:, self.termination_contact_indices, :], dim=-1
+        self.term_contact = torch.any(
+            (
+                torch.norm(
+                    self.contact_forces[:, self.termination_contact_indices, :], dim=-1
+                )
+                > 1.0
+            ),
+            dim=1,
         )
-        self.terminated = torch.any((term_contact > 1.0), dim=1)
+        self.terminated = self.term_contact
 
         # * Termination for velocities, orientation, and low height
-        self.terminated |= torch.any(
+        self.term_base_lin_vel = torch.any(
             torch.norm(self.base_lin_vel, dim=-1, keepdim=True) > 10.0, dim=1
         )
-        self.terminated |= torch.any(
+        self.terminated |= self.term_base_lin_vel
+
+        self.term_base_ang_vel = torch.any(
             torch.norm(self.base_ang_vel, dim=-1, keepdim=True) > 5.0, dim=1
         )
-        self.terminated |= torch.any(
-            torch.abs(self.projected_gravity[:, 0:1]) > 0.7, dim=1
+        self.terminated |= self.term_base_ang_vel
+
+        self.term_projected_gravity_x = torch.any(
+            torch.abs(self.projected_gravity[:, 0:1]) > 0.5, dim=1
         )
-        self.terminated |= torch.any(
-            torch.abs(self.projected_gravity[:, 1:2]) > 0.7, dim=1
+        self.terminated |= self.term_projected_gravity_x
+
+        self.term_projected_gravity_y = torch.any(
+            torch.abs(self.projected_gravity[:, 1:2]) > 0.5, dim=1
         )
-        self.terminated |= torch.any(self.base_pos[:, 2:3] < 0.3, dim=1)
+        self.terminated |= self.term_projected_gravity_y
+
+        self.term_base_pos = torch.any(self.base_pos[:, 2:3] < 0.3, dim=1)
+        self.terminated |= self.term_base_pos
 
         # * No terminal reward for time-outs
         self.timed_out = self.episode_length_buf > self.max_episode_length
@@ -1327,18 +1384,54 @@ class H1Controller(LeggedRobot):
     def _draw_step_vis(self):
         """Draws current foot steps for humanoid"""
         for i in range(self.num_envs):
-            right_foot_step = FootStepGeometry(
-                self.c_s[i, 0, :2], self.c_s[i, 0, 2], color=(1, 0, 1)
-            )  # Right foot: Pink
-            left_foot_step = FootStepGeometry(
-                self.c_s[i, 1, :2], self.c_s[i, 1, 2], color=(0, 1, 1)
-            )  # Left foot: Cyan
-            gymutil.draw_lines(
-                left_foot_step, self.gym, self.viewer, self.envs[i], pose=None
+            right_step_command = FootStepGeometry(
+                self.step_pos[i, 0, :2],
+                self.step_pos[i, 0, 2],
+                color=(1, 0, 0),
+            )  # Right foot: Red
+            left_step_command = FootStepGeometry(
+                self.step_pos[i, 1, :2],
+                self.step_pos[i, 1, 2],
+                color=(0, 0, 1),
+            )  # Left foot: Blue
+            # gymutil.draw_lines(
+            #     left_step_command, self.gym, self.viewer, self.envs[i], pose=None
+            # )
+            # gymutil.draw_lines(
+            #     right_step_command, self.gym, self.viewer, self.envs[i], pose=None
+            # )
+
+            verts = np.empty((1, 2), dtype=gymapi.Vec3.dtype)
+            verts[0][0] = (
+                self.step_pos[i, 0, 0] + 0.170,
+                self.step_pos[i, 0, 1] + 0.04,
+                1e-4,
             )
-            gymutil.draw_lines(
-                right_foot_step, self.gym, self.viewer, self.envs[i], pose=None
+            verts[0][1] = (
+                self.step_pos[i, 1, 0] + 0.170,
+                self.step_pos[i, 1, 1] - 0.04,
+                1e-4,
             )
+
+            colors = np.empty(1, dtype=gymapi.Vec3.dtype)
+            colors[0] = (0, 1, 0)
+            self.gym.add_lines(self.viewer, self.envs[i], 1, verts, colors)
+
+            verts = np.empty((1, 2), dtype=gymapi.Vec3.dtype)
+            verts[0][0] = (
+                self.step_pos[i, 0, 0] -0.08,
+                self.step_pos[i, 0, 1] + 0.04,
+                1e-4,
+            )
+            verts[0][1] = (
+                self.step_pos[i, 1, 0] -0.08,
+                self.step_pos[i, 1, 1] - 0.04,
+                1e-4,
+            )
+            colors = np.empty(1, dtype=gymapi.Vec3.dtype)
+            colors[0] = (0, 1, 0)
+            self.gym.add_lines(self.viewer, self.envs[i], 1, verts, colors)
+
 
     def _draw_step_command_vis(self):
         """Draws step command for humanoid"""
@@ -1494,6 +1587,110 @@ class H1Controller(LeggedRobot):
     def _reward_hip_pos(self):
         return -torch.sum(torch.square(self.dof_pos[:, [0, 2, 6, 8]]), dim=1)
 
+    def _reward_foot_slip(self):
+        """
+        Calculates the reward for minimizing foot slip. The reward is based on the contact forces
+        and the speed of the feet. A contact threshold is used to determine if the foot is in contact
+        with the ground. The speed of the foot is calculated and scaled by the contact condition.
+        """
+        contact = self.contact_forces[:, self.feet_ids, 2] > 5.0
+        foot_speed_norm = torch.norm(self.rigid_body_state[:, self.feet_ids, 7:9], dim=2)
+        rew = torch.sqrt(foot_speed_norm)
+        rew *= contact
+        return torch.sum(rew, dim=1)
+    
+    def _reward_feet_airtime(self, play=False):
+        """
+        通过在每次脚着地时施加-0.4的惩罚来规范踏步频率，
+        这可以通过一个积极的奖励成分来抵消，即足部腾空后的秒数(腾空时间)。
+        如果没有这个组件，学习到的控制器倾向于采用步进频率在风格上太大的步态，
+        这可能是由于这些频率对应于可能的局部最小值。这个分量在站立时是恒定的。
+        """
+        _rew = torch.zeros(
+            self.num_envs, dtype=torch.float, device=self.device, requires_grad=False
+        )
+        # if standing command
+        if torch.any(self.standing_command_mask.squeeze(1) == 1):
+            # print(self.standing_command_mask.squeeze(1) == 1)
+            _rew[self.standing_command_mask.squeeze(1) == 1] = 1
+        # else
+        contact = self.contact_forces[:, self.feet_ids, 2] > 0
+        self.contact_filt = torch.logical_and(
+            contact, (self.feet_air_time > 0)
+        )  # 是否第一次接触，如果接触就为1，不接触就为0
+        # print(self.contact_filt[0,:],(self.feet_air_time * self.contact_filt)[0,:])
+        self.last_contacts = contact  # 更新上一帧的接触情况
+        self.feet_air_time += self.dt
+        air_time_reward: torch.Tensor = self.feet_air_time * self.contact_filt - 0.5
+        self.feet_air_time *= ~contact  # 不接触的话就持续计数，接触就清零
+        if torch.any(self.standing_command_mask.squeeze(1) == 0):
+            _rew[self.standing_command_mask.squeeze(1) == 0] = air_time_reward[
+                self.standing_command_mask.squeeze(1) == 0
+            ].sum(dim=1)
+        # print(_rew)
+        if play:
+            return (
+                contact,
+                self.contact_filt,
+                self.feet_air_time,
+                air_time_reward,
+                _rew,
+                self.standing_command_mask.squeeze(1),
+            )
+        else:
+            return _rew
+
+    def _reward_boundary(self):
+        _rew = torch.zeros(
+            self.num_envs, dtype=torch.float, device=self.device, requires_grad=False
+        )
+        mask = ~self.is_point_in_quadrilateral(
+            self.quadrilateral_point, self.root_states[:, :2]
+        )
+        # print(mask[0])
+        return mask   
+    
+    def is_point_in_quadrilateral(
+        self, quadrilateral_point: torch.Tensor, root_states: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        判断每个环境中的root_states是否在对应的四边形内部。
+
+        参数：
+            quadrilateral_point: Tensor，形状 [num_envs, 4, 2]，
+                                存放每个环境中四边形的四个顶点，
+                                点的顺序依次为左上、左下、右下、右上。
+            root_states: Tensor，形状 [num_envs, 2]，每个环境中待检测的点。
+
+        返回：
+            inside: Bool型Tensor，形状 [num_envs]，每个元素表示对应环境中
+                    root_states 点是否在四边形内部（True表示在内部，False表示不在内部）。
+        """
+        # 将四边形各个顶点沿第1维滚动（即对每个环境，将每个点的“下一个”顶点计算出来）
+        quadr_next = torch.roll(
+            quadrilateral_point, shifts=-1, dims=1
+        )  # 形状 [num_envs, 4, 2]
+
+        # 计算每条边的向量：edge = next_vertex - current_vertex
+        edge_vectors = quadr_next - quadrilateral_point  # 形状 [num_envs, 4, 2]
+
+        # 计算从每个顶点到待判断点的向量：相对向量
+        # 注意：root_states的形状 [num_envs,2]扩展成 [num_envs,1,2]，与四边形顶点相减
+        rel_vectors = (
+            root_states.unsqueeze(1) - quadrilateral_point
+        )  # 形状 [num_envs, 4, 2]
+
+        # 计算二维叉积：对于二维向量 (a, b) 和 (c, d)，叉积的标量为 a*d - b*c
+        cross_products = (
+            edge_vectors[..., 0] * rel_vectors[..., 1]
+            - edge_vectors[..., 1] * rel_vectors[..., 0]
+        )  # 形状 [num_envs, 4]
+
+        # 判断：如果在某个环境中，所有边的叉积均大于等于0或均小于等于0，则点在内部
+        inside = torch.all(cross_products >= 0, dim=1) | torch.all(
+            cross_products <= 0, dim=1
+        )
+        return inside
     # * Stepping Rewards for standing* #
     def _reward_stand_joint_regularization(self):
         # Reward joint poses and symmetry
@@ -1505,6 +1702,28 @@ class H1Controller(LeggedRobot):
             self.foot_contact[:, 0], self.foot_contact[:, 1]
         ).int()
         return contact_rewards * self.standing_command_mask.squeeze(1)
+
+    def _reward_alive(self):
+        # Reward for staying alive
+        return 1.0
+
+    def _reward_term_contact(self):
+        return -self.term_contact.float()
+
+    def _reward_term_base_lin_vel(self):
+        return -self.term_base_lin_vel.float()
+
+    def _reward_term_base_ang_vel(self):
+        return -self.term_base_ang_vel.float()
+
+    def _reward_term_projected_gravity_x(self):
+        return -self.term_projected_gravity_x.float()
+
+    def _reward_term_projected_gravity_y(self):
+        return -self.term_projected_gravity_y.float()
+
+    def _reward_term_base_pos(self):
+        return -self.term_base_pos.float()
 
     # ##################### HELPER FUNCTIONS ################################## #
 

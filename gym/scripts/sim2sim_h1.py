@@ -196,17 +196,16 @@ def run_mujoco(policy, cfg: H1ControllerCfg):
     count_csv = 0
 
     phase = 0
-    step_period = 15  # 38#
+    step_period = 30  # 38#
     first_flag = 0
     if cfg.sim_config.plot_flag:
         plot_thread = threading.Thread(target=plot_data, args=(data_queue,))
         plot_thread.daemon = True
         plot_thread.start()
-    flip_line = int(0.5 * 1 / cfg.sim_config.dt)
-    flip_count = 0
-    flip_flag = 1
     # for _ in range(int(21)):
     # for _ in range(int(2001)):
+    cell_state = torch.zeros(1, 1, 64)
+    hidden_state = torch.zeros(1, 1, 64)
     for _ in range(int(1e166)):
         # for _ in range(int(1+20)):
         # Obtain an observation
@@ -218,114 +217,154 @@ def run_mujoco(policy, cfg: H1ControllerCfg):
             # merged_tensor = dq[-6:]
             merged_tensor = target_q[-6:]
             data_queue.put(merged_tensor)
-        if count_simlevel % cfg.sim_config.sim_decimation == 0:
-            if count_lowlevel % cfg.sim_config.decimation == 0:
-                obs = np.zeros([1, cfg.env.num_single_obs], dtype=np.float32)
-                _q = quat
-                _v = np.array([0.0, 0.0, -1.0])
-                projected_gravity = quat_rotate_inverse(_q, _v)
-                eu_ang = quaternion_to_euler_array(quat)
-                eu_ang[eu_ang > math.pi] -= 2 * math.pi
+        if count_lowlevel % cfg.sim_config.decimation == 0:
+            obs = np.zeros([1, cfg.env.num_single_obs], dtype=np.float32)
+            _q = quat
+            _v = np.array([0.0, 0.0, -1.0])
+            projected_gravity = quat_rotate_inverse(_q, _v)
+            eu_ang = quaternion_to_euler_array(quat)
+            eu_ang[eu_ang > math.pi] -= 2 * math.pi
 
-                full_step_period = step_period * 2
-                phase += 1 / full_step_period
-                # base_ang_vel
-                # obs[0, 0:3] = omega * cfg.scaling.base_ang_vel * 0
-                obs[0, 0:3] = omega * cfg.scaling.base_ang_vel
-                # print("base_ang_vel:\r\n",obs[0, 0:3])
-                # projected_gravity
-                # obs[0, 3:6] = projected_gravity * cfg.scaling.projected_gravity * 0
-                # obs[0, 5] = -1
-                obs[0, 3:6] = projected_gravity * cfg.scaling.projected_gravity
-                # print("projected_gravity:\r\n",obs[0, 3:6])
-                # commands
-                obs[0, 6] = cmd.vx * cfg.scaling.commands
-                obs[0, 7] = cmd.vy * cfg.scaling.commands
-                obs[0, 8] = cmd.dyaw * cfg.scaling.commands
-                # print("commands:\r\n",obs[0, 6:9])
-                # standing_command_mask
-                obs[0, 43] = 0
-                # phase_sin
-                obs[0, 9] = math.sin(2 * math.pi * phase * (1 - obs[0, 43]))
-                # phase_cos
-                obs[0, 10] = math.cos(2 * math.pi * phase * (1 - obs[0, 43]))
+            full_step_period = step_period * 2
+            phase += 1 / full_step_period
+            # base_ang_vel
+            # obs[0, 0:3] = omega * cfg.scaling.base_ang_vel * 0
+            obs[0, 0:3] = omega * cfg.scaling.base_ang_vel
+            # print("base_ang_vel:\r\n",obs[0, 0:3])
+            # projected_gravity
+            # obs[0, 3:6] = projected_gravity * cfg.scaling.projected_gravity * 0
+            # obs[0, 5] = -1
+            obs[0, 3:6] = projected_gravity * cfg.scaling.projected_gravity
+            # print("projected_gravity:\r\n",obs[0, 3:6])
+            # commands
+            obs[0, 6] = cmd.vx * cfg.scaling.commands
+            obs[0, 7] = cmd.vy * cfg.scaling.commands
+            obs[0, 8] = cmd.dyaw * cfg.scaling.commands
+            # print("commands:\r\n",obs[0, 6:9])
+            # standing_command_mask
+            obs[0, 43] = 0
+            # phase_sin
+            obs[0, 9] = math.sin(2 * math.pi * phase * (1 - obs[0, 43]))
+            # phase_cos
+            obs[0, 10] = math.cos(2 * math.pi * phase * (1 - obs[0, 43]))
 
-                # print("phase_sin:\r\n",obs[0, 9])
-                # print("phase_cos:\r\n",obs[0, 10])
-                # dof_pos
-                obs[0, 11:23] = q * cfg.scaling.dof_pos
-                # print("dof_pos:\r\n",obs[0, 11:23])
-                # dof_vel
-                obs[0, 23:35] = dq * cfg.scaling.dof_vel
-                # print("dof_vel:\r\n",obs[0, 23:35])
-                # foot_states_right foot_states_left
-                obs[0, 35:43] = cfg.sim_config.pin_f.get_foot_pos(q)
-                # print("foot_states:\r\n", obs[0, 35:43])
+            # print("phase_sin:\r\n",obs[0, 9])
+            # print("phase_cos:\r\n",obs[0, 10])
+            # dof_pos
+            obs[0, 11:23] = q * cfg.scaling.dof_pos
+            # print("dof_pos:\r\n",obs[0, 11:23])
+            # dof_vel
+            obs[0, 23:35] = dq * cfg.scaling.dof_vel
+            # print("dof_vel:\r\n",obs[0, 23:35])
+            # foot_states_right foot_states_left
+            obs[0, 35:43] = cfg.sim_config.pin_f.get_foot_pos(q)
+            # print("foot_states:\r\n", obs[0, 35:43])
 
-                # print("standing_command_mask:\r\n",obs[0, 43])
+            # print("standing_command_mask:\r\n",obs[0, 43])
 
-                obs = np.clip(
-                    obs,
-                    -20,
-                    20,
+            obs = np.clip(
+                obs,
+                -20,
+                20,
+            )
+            # obs *= 0
+            hist_obs.append(obs)
+            hist_obs.popleft()
+
+            policy_input = np.zeros([1, cfg.env.num_observations], dtype=np.float32)
+            for i in range(cfg.env.frame_stack):
+                policy_input[
+                    0, i * cfg.env.num_single_obs : (i + 1) * cfg.env.num_single_obs
+                ] = hist_obs[i][0, :]
+            if cfg.sim_config.use_onnx:
+                # action[:] = run_onnx_inference(policy, torch.tensor(policy_input))
+                act, hidden_state, cell_state = run_onnx_inference(
+                    policy, torch.tensor(policy_input), hidden_state, cell_state
                 )
-                # obs *= 0
-                hist_obs.append(obs)
-                hist_obs.popleft()
-
-                policy_input = np.zeros([1, cfg.env.num_observations], dtype=np.float32)
-                for i in range(cfg.env.frame_stack):
-                    policy_input[
-                        0, i * cfg.env.num_single_obs : (i + 1) * cfg.env.num_single_obs
-                    ] = hist_obs[i][0, :]
-
-                action[:] = policy(torch.tensor(policy_input))[0].detach().numpy()
-                # print("policy_input: ",policy_input)
-                # print("action: ",action)
-                action = np.clip(
-                    action,
-                    -cfg.scaling.clip_actions,
-                    cfg.scaling.clip_actions,
+                action[:] = act
+            else:
+                act, hidden_state, cell_state = policy(
+                    torch.tensor(policy_input), hidden_state, cell_state
                 )
-                target_q = action
-                if first_flag == 1:
-                    target_q = action  # * np.array(cfg.control.actuation_scale, dtype=np.double)
-                else:
-                    target_q = 0 * action
-                # print("obs: ",obs)
-                # print("action: ",action)
-            target_dq = np.zeros((cfg.env.num_actuators), dtype=np.double)
-            # target_q *= 0
-            # target_q[0] = 0.2 * flip_flag
-            # target_q[0]*=0
-            # target_q[0+6]*=0
-            tau = pd_control(
-                target_q, q, cfg.robot_config.kps, target_dq, dq, cfg.robot_config.kds
-            )  # Calc torques
-            # t_max = (np.abs(dq) - cfg.motor.b) / cfg.motor.k
-            # print("q: ",q)
-            # print("tau: ",tau)
-            tau = np.clip(
-                tau, -cfg.robot_config.tau_limit, cfg.robot_config.tau_limit
-            )  # Clamp torques
-            # for i in range(6):
-            #     tmptau = tau[i]
-            #     tau[i] = tau[i + 6]
-            #     tau[i + 6] = tmptau
-            count_lowlevel += 1
+                action[:] = act[0].detach().numpy()
+                # print(hidden_state)
+                # print(cell_state)
+            # print("policy_input: ",policy_input)
+            # print("action: ",action)
+            action = np.clip(
+                action,
+                -cfg.scaling.clip_actions,
+                cfg.scaling.clip_actions,
+            )
+            target_q = action
+            if first_flag == 1:
+                target_q = action  # * np.array(cfg.control.actuation_scale, dtype=np.double)
+            else:
+                target_q = 0 * action
+        target_dq = np.zeros((cfg.env.num_actuators), dtype=np.double)
+        tau = pd_control(
+            target_q, q, cfg.robot_config.kps, target_dq, dq, cfg.robot_config.kds
+        )  # Calc torques
+        tau = np.clip(
+            tau, -cfg.robot_config.tau_limit, cfg.robot_config.tau_limit
+        )  # Clamp torques
+        count_lowlevel += 1
 
-        # print(tau)
-        count_simlevel += 1
-        flip_count += 1
-        if flip_count == flip_line:
-            flip_count *= 0
-            flip_flag *= -1
 
         data.ctrl = tau
         mujoco.mj_step(model, data)
         viewer.render()
         first_flag = 1
     viewer.close()
+
+
+import onnxruntime as ort
+
+
+def load_onnx_model(onnx_path, device="cpu"):
+    """
+    加载ONNX模型并创建推理会话
+    :param onnx_path: ONNX模型文件路径
+    :param device: 'cpu' 或 'cuda'
+    :return: ONNX推理会话
+    """
+    providers = (
+        ["CPUExecutionProvider"] if device == "cpu" else ["CUDAExecutionProvider"]
+    )
+    session = ort.InferenceSession(onnx_path, providers=providers)
+    return session
+
+
+def run_onnx_inference(session, input_data, hidden_in_data, cell_in_data):
+    """
+    使用ONNX模型进行推理
+    :param session: ONNX推理会话
+    :param input_data: 输入数据(tensor或numpy array)
+    :return: 模型输出
+    """
+    # 转换为numpy array并确保数据类型正确
+    if isinstance(input_data, torch.Tensor):
+        input_data = input_data.detach().cpu().numpy()
+    if isinstance(hidden_in_data, torch.Tensor):
+        hidden_in_data = hidden_in_data.detach().cpu().numpy()
+    if isinstance(cell_in_data, torch.Tensor):
+        cell_in_data = cell_in_data.detach().cpu().numpy()
+
+    # 获取输入名称
+    input_name = session.get_inputs()[0].name
+    hidden_in_name = session.get_inputs()[1].name
+    cell_in_name = session.get_inputs()[2].name
+
+    # 运行推理
+    output, hidden_out, cell_out = session.run(
+        None,
+        {
+            input_name: input_data,
+            hidden_in_name: hidden_in_data,
+            cell_in_name: cell_in_data,
+        },
+    )
+    return output, hidden_out, cell_out  # 默认返回第一个输出
 
 
 if __name__ == "__main__":
@@ -337,9 +376,12 @@ if __name__ == "__main__":
         type=str,
         required=False,
         help="Run to load from.",
-        default=f"{LEGGED_GYM_ROOT_DIR}/logs/U_H1_R/exported/policy_lstm_1.pt",
+        default=f"{LEGGED_GYM_ROOT_DIR}/logs/U_H1_R/exported/",
     )
     parser.add_argument("--terrain", action="store_true", help="terrain or plane")
+    parser.add_argument(
+        "--use-onnx", action="store_true", help="Use ONNX runtime for inference"
+    )
     args = parser.parse_args()
 
     class Sim2simCfg(H1ControllerCfg):
@@ -356,15 +398,16 @@ if __name__ == "__main__":
             )
             pin_f = pin_mj(urdf_path)
             sim_duration = 60.0
-            dt = 0.002
+            dt = 0.001
             decimation = 10
             sim_decimation = 1
             plot_flag = False  # True , False
+            use_onnx = args.use_onnx
 
         class robot_config:
             # mujoco sim2sim config
-            kps = np.array([100, 150, 150, 300, 40, 10] * 2, dtype=np.double)
-            kds = np.array([25.5, 18, 12, 16, 3.0, 0.4] * 2, dtype=np.double)
+            kps = np.array([100, 150, 150, 300, 80, 10] * 2, dtype=np.double)
+            kds = np.array([10.5, 18, 12, 16, 3.0, 0.4] * 2, dtype=np.double)
             # kds = np.array([8.5, 16, 16, 16, 3.0, 0.4] * 2, dtype=np.double)
             # isaacgym train config
             # kps = np.array([200, 200, 200, 300, 40, 40] * 2, dtype=np.double)
@@ -373,5 +416,11 @@ if __name__ == "__main__":
             print(kds)
             tau_limit = np.array([200, 200, 200, 300, 60, 40] * 2, dtype=np.double)
 
-    policy = torch.jit.load(args.load_model)
+    if args.use_onnx:
+        print("use onnx")
+        policy = load_onnx_model(args.load_model + "policy_lstm_2.onnx")
+    else:
+        print("use pt")
+        policy = torch.jit.load(args.load_model + "policy_lstm_1.pt")
+
     run_mujoco(policy, Sim2simCfg())

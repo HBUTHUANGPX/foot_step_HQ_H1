@@ -126,7 +126,7 @@ def get_load_path(root, load_run=-1, checkpoint=-1, play_flag=False):
         load_run = last_run
     else:
         load_run = os.path.join(root, load_run)
-
+    print("load_run:",load_run)
     if checkpoint == -1:
         models = [file for file in os.listdir(load_run) if "model" in file]
         models.sort(key=lambda m: "{0:0>15}".format(m))
@@ -342,12 +342,17 @@ class PolicyExporterLSTM(torch.nn.Module):
             f"cell_state",
             torch.zeros(self.memory.num_layers, 1, self.memory.hidden_size),
         )
-
-    def forward(self, x):
-        out, (h, c) = self.memory(x.unsqueeze(0), (self.hidden_state, self.cell_state))
+        print("self.memory.num_layers:",self.memory.num_layers)
+        print("self.memory.hidden_size:",self.memory.hidden_size)
+    def forward(self, x, hidden_state, cell_state):
+        if hidden_state is None:
+            hidden_state = self.hidden_state
+        if cell_state is None:
+            cell_state = self.cell_state
+        out, (h, c) = self.memory(x.unsqueeze(0), (hidden_state, cell_state))
         self.hidden_state[:] = h
         self.cell_state[:] = c
-        return self.actor(out.squeeze(0))
+        return self.actor(out.squeeze(0)), h, c
 
     @torch.jit.export
     def reset_memory(self):
@@ -356,7 +361,45 @@ class PolicyExporterLSTM(torch.nn.Module):
 
     def export(self, path):
         os.makedirs(path, exist_ok=True)
-        path = os.path.join(path, "policy_lstm_1.pt")
+        pt_path = os.path.join(path, "policy_lstm_1.pt")
         self.to("cpu")
+        self.eval()
+
+        # 导出 TorchScript 模型
         traced_script_module = torch.jit.script(self)
-        traced_script_module.save(path)
+        traced_script_module.save(pt_path)
+
+        # 导出ONNX模型
+        onnx_path = os.path.join(path, "policy_lstm.onnx")
+        dummy_input = torch.randn(
+            1, self.memory.input_size
+        )  # 假设输入维度与actor第一层输入匹配
+
+        dummy_hidden_state = torch.randn(
+            self.memory.num_layers, 1, self.memory.hidden_size
+        )  # 假设输入维度与actor第一层输入匹配
+        dummy_cell_state = torch.randn(
+            self.memory.num_layers, 1, self.memory.hidden_size
+        )  # 假设输入维度与actor第一层输入匹配
+        # 导出前重置记忆状态
+        self.reset_memory()
+
+        torch.onnx.export(
+            self,  # 要导出的模型
+            (dummy_input, dummy_hidden_state, dummy_cell_state),  # 模型输入的虚拟张量
+            os.path.join(path, "policy_lstm_2.onnx"),  # 导出的 ONNX 文件路径
+            export_params=True,  # 是否导出模型参数
+            opset_version=12,  # ONNX opset 版本
+            do_constant_folding=True,  # 是否执行常量折叠优化
+            input_names=["input", "hidden_in", "cell_in"],  # 输入节点的名称
+            output_names=["output", "hidden_out", "cell_out"],  # 输出节点的名称
+            dynamic_axes={
+                "input": {0: "batch_size"},  # 批处理维度
+                "hidden_in": {1: "batch_size"},  # 批处理维度
+                "cell_in": {1: "batch_size"},  # 批处理维度
+                "output": {0: "batch_size"},
+                "hidden_out": {1: "batch_size"},
+                "cell_out": {1: "batch_size"},
+            },
+            verbose=False,
+        )

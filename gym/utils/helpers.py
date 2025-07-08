@@ -179,7 +179,7 @@ def get_args():
         {
             "name": "--task",
             "type": str,
-            "default": "h1_controller",
+            "default": "h1__NPcontroller",
             "help": "Resume training or start testing from a checkpoint. Overrides config file if provided.",
         },
         {

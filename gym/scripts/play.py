@@ -26,7 +26,6 @@ import torch
 import threading
 import queue
 import matplotlib
-# matplotlib.use('Agg')  # 在导入 matplotlib.pyplot 之前设置
 import matplotlib.pyplot as plt
 import time
 import cv2
@@ -68,7 +67,7 @@ def plot_data(data_queue):
                 axs[i].relim()
                 axs[i].autoscale_view()
             # print(len(xdata[i]))
-            if len(xdata[i]) % 1 == 0:
+            if len(xdata[i]) % 33 == 0:
                 fig.canvas.draw()
                 fig.canvas.flush_events()
 
@@ -253,20 +252,14 @@ def play(args):
         # )[0, :]
         # data_queue.put(merged_tensor)
 
-        (
-            contact,
-            contact_filt,
-            feet_air_time,
-            air_time_reward,
-            _rew,
-            standing_command_mask,
-        ) = env._reward_feet_airtime(play=True)
-        # print(standing_command_mask.size())
-        # print(contact.size())
-        # print(contact_filt.size())
-        # print(feet_air_time.size())
-        # print(air_time_reward.size())
-        # print(_rew.size())
+        # (
+        #     contact,
+        #     contact_filt,
+        #     feet_air_time,
+        #     air_time_reward,
+        #     _rew,
+        #     standing_command_mask,
+        # ) = env._reward_feet_airtime(play=True)
         # merged_tensor = torch.cat(
         #     [
         #         contact,
@@ -277,7 +270,7 @@ def play(args):
         #         standing_command_mask.unsqueeze(1),
         #     ],
         #     dim=1,
-        # )[1, :]
+        # )[0, :]
         # data_queue.put(merged_tensor)
 
         if RENDER:

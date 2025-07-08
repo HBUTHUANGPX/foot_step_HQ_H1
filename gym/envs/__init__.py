@@ -55,3 +55,7 @@ task_registry.register("humanoid_vanilla", HumanoidVanilla, HumanoidVanillaCfg, 
 task_registry.register("humanoid_controller", HumanoidController, HumanoidControllerCfg, HumanoidControllerRunnerCfg)
       
 task_registry.register("h1_controller", H1Controller, H1ControllerCfg, H1ControllerRunnerCfg)
+
+from .h1_none_phase.h1_none_phase_controller import H1_NPController
+from .h1_none_phase.h1_none_phase_controller_config import H1_NPControllerCfg, H1_NPControllerRunnerCfg    
+task_registry.register("h1__NPcontroller", H1_NPController, H1_NPControllerCfg, H1_NPControllerRunnerCfg)

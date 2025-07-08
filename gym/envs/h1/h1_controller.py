@@ -369,6 +369,8 @@ class H1Controller(LeggedRobot):
             device=self.device,
             requires_grad=False,
         )
+        
+
     def _compute_torques(self):
         self.desired_pos_target = (
             self.dof_pos_target * self.cfg.env.action_scale + self.default_dof_pos

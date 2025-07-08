@@ -78,50 +78,6 @@ class RolloutStorage(BaseStorage):
             )
         else:
             self.critic_observations = None
-        actor_indices_to_negate = [
-            0,2,
-            4,
-            7,8,
-            9,10,
-            11,13,16,17,19,22,
-            23,25,28,29,31,34,
-            36,38,40,42,
-        ]
-        actor_diag_elements = torch.ones(num_obs, device=self.device)
-        actor_diag_elements[actor_indices_to_negate] = -1
-        self.actor_M = torch.diag(actor_diag_elements)
-
-        critic_indices_to_negate = actor_indices_to_negate.copy()
-        critic_indices_to_negate.extend([46,49,51,53,55]) 
-        critic_diag_elements = torch.ones(num_critic_obs, device=self.device)
-        critic_diag_elements[critic_indices_to_negate] = -1
-        self.critic_M = torch.diag(critic_diag_elements)
-
-        action_indices_to_negate = [
-            0,2,5,6,8,11,
-        ]
-        action_diag_elements = torch.ones(num_actions, device=self.device)
-        action_diag_elements[action_indices_to_negate] = -1
-        self.action_M = torch.diag(action_diag_elements)
-
-        self.actor_P = torch.eye(num_obs, device=self.device)
-        actor_swap_pairs = [(11,17),(12,18),(13,19),(14,20),(15,21),(16,22),
-                            (23,29),(24,30),(25,31),(26,32),(27,33),(28,34),
-                            (35,39),(36,40),(37,41),(38,42),
-                            ]
-        for i, j in actor_swap_pairs:
-            self.actor_P[[i, j]] = self.actor_P[[j, i]]
-
-        self.critic_P = torch.eye(num_critic_obs, device=self.device)
-        critic_swap_pairs = actor_swap_pairs.copy()
-        critic_swap_pairs.extend([(48,52),(49,53),(50,54),(51,55)]) 
-        for i, j in critic_swap_pairs:
-            self.critic_P[[i, j]] = self.critic_P[[j, i]]
-
-        self.action_P = torch.eye(num_actions, device=self.device)
-        action_swap_pairs = [(0,6),(1,7),(2,8),(3,9),(4,10),(5,11)]
-        for i, j in action_swap_pairs:
-            self.action_P[[i, j]] = self.action_P[[j, i]]
 
         self.rewards = torch.zeros(
             num_transitions_per_env, num_envs, 1, device=self.device
@@ -161,6 +117,7 @@ class RolloutStorage(BaseStorage):
         self.saved_hidden_states_c = None
 
         self.fill_count = 0
+
     def add_transitions(self, transition: Transition):
         if self.fill_count >= self.num_transitions_per_env:
             raise AssertionError("Rollout buffer overflow")
@@ -430,115 +387,116 @@ class RolloutStorage(BaseStorage):
         # # print(len(swap_pairs),P.size(),M.size(),tensor.size())
         # s_tensor = tensor @ P @ M
 
-        if critic_flag:
-            s_tensor = tensor @ self.critic_P @ self.critic_M
-        else:
-            s_tensor = tensor @ self.actor_P @ self.actor_M
-
-        # s_tensor = torch.zeros_like(tensor)
-        # a = 0
-        # # # base heading
-        # # s_tensor[..., a] = -tensor[..., a]
-        # # a += 1
-        # # base ang vel
-        # s_tensor[..., a] = -tensor[..., a] # 0
-        # s_tensor[..., a + 1] = tensor[..., a + 1]
-        # s_tensor[..., a + 2] = -tensor[..., a + 2]
-        # a += 3
-        # # projected gravity
-        # s_tensor[..., a] = tensor[..., a]#3
-        # s_tensor[..., a + 1] = -tensor[..., a + 1]
-        # s_tensor[..., a + 2] = tensor[..., a + 2]
-        # a += 3
-        # # commands
-        # s_tensor[..., a] = tensor[..., a]#6
-        # s_tensor[..., a + 1] = -tensor[..., a + 1]
-        # s_tensor[..., a + 2] = -tensor[..., a + 2]
-        # a += 3
-        # # phase sin/cos
-        # s_tensor[..., a] = -tensor[..., a]#9
-        # s_tensor[..., a + 1] = -tensor[..., a + 1]
-        # a += 2
-        # # dof pos
-        # s_tensor[..., a] = -tensor[..., a + 6]#11
-        # s_tensor[..., a + 1] = tensor[..., a + 7]
-        # s_tensor[..., a + 2] = -tensor[..., a + 8]
-        # s_tensor[..., a + 3] = tensor[..., a + 9]
-        # s_tensor[..., a + 4] = tensor[..., a + 10]
-        # s_tensor[..., a + 5] = -tensor[..., a + 11]
-
-        # s_tensor[..., a + 6] = -tensor[..., a + 0]#17
-        # s_tensor[..., a + 7] = tensor[..., a + 1]
-        # s_tensor[..., a + 8] = -tensor[..., a + 2]
-        # s_tensor[..., a + 9] = tensor[..., a + 3]
-        # s_tensor[..., a + 10] = tensor[..., a + 4]
-        # s_tensor[..., a + 11] = -tensor[..., a + 5]
-        # a += 12
-        # # dof vel
-        # s_tensor[..., a] = -tensor[..., a + 6]#23
-        # s_tensor[..., a + 1] = tensor[..., a + 7]
-        # s_tensor[..., a + 2] = -tensor[..., a + 8]
-        # s_tensor[..., a + 3] = tensor[..., a + 9]
-        # s_tensor[..., a + 4] = tensor[..., a + 10]
-        # s_tensor[..., a + 5] = -tensor[..., a + 11]
-
-        # s_tensor[..., a + 6] = -tensor[..., a]
-        # s_tensor[..., a + 7] = tensor[..., a + 1]
-        # s_tensor[..., a + 8] = -tensor[..., a + 2]
-        # s_tensor[..., a + 9] = tensor[..., a + 3]
-        # s_tensor[..., a + 10] = tensor[..., a + 4]
-        # s_tensor[..., a + 11] = -tensor[..., a + 5]
-        # a += 12
-        # # foot_states_right & foot_states_left
-        # s_tensor[..., a] = tensor[..., a + 4]#35
-        # s_tensor[..., a + 1] = -tensor[..., a + 5]
-        # s_tensor[..., a + 2] = tensor[..., a + 6]
-        # s_tensor[..., a + 3] = -tensor[..., a + 7]
-
-        # s_tensor[..., a + 4] = tensor[..., a]
-        # s_tensor[..., a + 5] = -tensor[..., a + 1]
-        # s_tensor[..., a + 6] = tensor[..., a + 2]
-        # s_tensor[..., a + 7] = -tensor[..., a + 3]
-        # a += 8
-        # # standing_command_mask
-        # s_tensor[..., a] = tensor[..., a] # 43
-        # a += 1
-
         # if critic_flag:
-        #     # base_height
-        #     s_tensor[..., a] = tensor[..., a] #44
-        #     a += 1
-        #     # base_lin_vel_world
-        #     s_tensor[..., a] = tensor[..., a] #45
-        #     s_tensor[..., a + 1] = -tensor[..., a + 1]
-        #     s_tensor[..., a + 2] = tensor[..., a + 2]
-        #     a += 3
-        #     # step_commands_right
-        #     s_tensor[..., a] = tensor[..., a + 4] #48
-        #     s_tensor[..., a + 1] = -tensor[..., a + 5]
-        #     s_tensor[..., a + 2] = tensor[..., a + 6]
-        #     s_tensor[..., a + 3] = -tensor[..., a + 7]
-        #     s_tensor[..., a + 4] = tensor[..., a]
-        #     s_tensor[..., a + 5] = -tensor[..., a + 1]
-        #     s_tensor[..., a + 6] = tensor[..., a + 2]
-        #     s_tensor[..., a + 7] = -tensor[..., a + 3]
-        #     a += 8
+        #     s_tensor = tensor @ self.critic_P @ self.critic_M
+        # else:
+        #     s_tensor = tensor @ self.actor_P @ self.actor_M
+
+        s_tensor = torch.zeros_like(tensor)
+        a = 0
+        # # base heading
+        # s_tensor[..., a] = -tensor[..., a]
+        # a += 1
+        # base ang vel
+        s_tensor[..., a] = -tensor[..., a] # 0
+        s_tensor[..., a + 1] = tensor[..., a + 1]
+        s_tensor[..., a + 2] = -tensor[..., a + 2]
+        a += 3
+        # projected gravity
+        s_tensor[..., a] = tensor[..., a]#3
+        s_tensor[..., a + 1] = -tensor[..., a + 1]
+        s_tensor[..., a + 2] = tensor[..., a + 2]
+        a += 3
+        # commands
+        s_tensor[..., a] = tensor[..., a]#6
+        s_tensor[..., a + 1] = -tensor[..., a + 1]
+        s_tensor[..., a + 2] = -tensor[..., a + 2]
+        a += 3
+        # # phase sin/cos
+        s_tensor[..., a] = -tensor[..., a]#9
+        s_tensor[..., a + 1] = -tensor[..., a + 1]
+        a += 2
+        # dof pos
+        s_tensor[..., a] = -tensor[..., a + 6]#11
+        s_tensor[..., a + 1] = tensor[..., a + 7]
+        s_tensor[..., a + 2] = -tensor[..., a + 8]
+        s_tensor[..., a + 3] = tensor[..., a + 9]
+        s_tensor[..., a + 4] = tensor[..., a + 10]
+        s_tensor[..., a + 5] = -tensor[..., a + 11]
+
+        s_tensor[..., a + 6] = -tensor[..., a + 0]#17
+        s_tensor[..., a + 7] = tensor[..., a + 1]
+        s_tensor[..., a + 8] = -tensor[..., a + 2]
+        s_tensor[..., a + 9] = tensor[..., a + 3]
+        s_tensor[..., a + 10] = tensor[..., a + 4]
+        s_tensor[..., a + 11] = -tensor[..., a + 5]
+        a += 12
+        # dof vel
+        s_tensor[..., a] = -tensor[..., a + 6]#23
+        s_tensor[..., a + 1] = tensor[..., a + 7]
+        s_tensor[..., a + 2] = -tensor[..., a + 8]
+        s_tensor[..., a + 3] = tensor[..., a + 9]
+        s_tensor[..., a + 4] = tensor[..., a + 10]
+        s_tensor[..., a + 5] = -tensor[..., a + 11]
+
+        s_tensor[..., a + 6] = -tensor[..., a]
+        s_tensor[..., a + 7] = tensor[..., a + 1]
+        s_tensor[..., a + 8] = -tensor[..., a + 2]
+        s_tensor[..., a + 9] = tensor[..., a + 3]
+        s_tensor[..., a + 10] = tensor[..., a + 4]
+        s_tensor[..., a + 11] = -tensor[..., a + 5]
+        a += 12
+        # foot_states_right & foot_states_left
+        s_tensor[..., a] = tensor[..., a + 4]#35
+        s_tensor[..., a + 1] = -tensor[..., a + 5]
+        s_tensor[..., a + 2] = tensor[..., a + 6]
+        s_tensor[..., a + 3] = -tensor[..., a + 7]
+
+        s_tensor[..., a + 4] = tensor[..., a]
+        s_tensor[..., a + 5] = -tensor[..., a + 1]
+        s_tensor[..., a + 6] = tensor[..., a + 2]
+        s_tensor[..., a + 7] = -tensor[..., a + 3]
+        a += 8
+        # standing_command_mask
+        s_tensor[..., a] = tensor[..., a] # 43
+        a += 1
+
+        if critic_flag:
+            # base_height
+            s_tensor[..., a] = tensor[..., a] #44
+            a += 1
+            # base_lin_vel_world
+            s_tensor[..., a] = tensor[..., a] #45
+            s_tensor[..., a + 1] = -tensor[..., a + 1]
+            s_tensor[..., a + 2] = tensor[..., a + 2]
+            a += 3
+            # # step_commands_right
+            # s_tensor[..., a] = tensor[..., a + 4] #48
+            # s_tensor[..., a + 1] = -tensor[..., a + 5]
+            # s_tensor[..., a + 2] = tensor[..., a + 6]
+            # s_tensor[..., a + 3] = -tensor[..., a + 7]
+            # s_tensor[..., a + 4] = tensor[..., a]
+            # s_tensor[..., a + 5] = -tensor[..., a + 1]
+            # s_tensor[..., a + 6] = tensor[..., a + 2]
+            # s_tensor[..., a + 7] = -tensor[..., a + 3]
+            # a += 8
         return s_tensor
 
     def action_symmetry(self, tensor):
-        # s_tensor = torch.zeros_like(tensor)
-        # a = 0
-        # s_tensor[..., a] = -tensor[..., a + 6]
-        # s_tensor[..., a + 1] = tensor[..., a + 7]
-        # s_tensor[..., a + 2] = -tensor[..., a + 8]
-        # s_tensor[..., a + 3] = tensor[..., a + 9]
-        # s_tensor[..., a + 4] = tensor[..., a + 10]
-        # s_tensor[..., a + 5] = -tensor[..., a + 11]
+        s_tensor = torch.zeros_like(tensor)
+        a = 0
+        s_tensor[..., a] = -tensor[..., a + 6]
+        s_tensor[..., a + 1] = tensor[..., a + 7]
+        s_tensor[..., a + 2] = -tensor[..., a + 8]
+        s_tensor[..., a + 3] = tensor[..., a + 9]
+        s_tensor[..., a + 4] = tensor[..., a + 10]
+        s_tensor[..., a + 5] = -tensor[..., a + 11]
 
-        # s_tensor[..., a + 6] = -tensor[..., a]
-        # s_tensor[..., a + 7] = tensor[..., a + 1]
-        # s_tensor[..., a + 8] = -tensor[..., a + 2]
-        # s_tensor[..., a + 9] = tensor[..., a + 3]
-        # s_tensor[..., a + 10] = tensor[..., a + 4]
-        # s_tensor[..., a + 11] = -tensor[..., a + 5]
-        return tensor @ self.action_P @ self.action_M
+        s_tensor[..., a + 6] = -tensor[..., a]
+        s_tensor[..., a + 7] = tensor[..., a + 1]
+        s_tensor[..., a + 8] = -tensor[..., a + 2]
+        s_tensor[..., a + 9] = tensor[..., a + 3]
+        s_tensor[..., a + 10] = tensor[..., a + 4]
+        s_tensor[..., a + 11] = -tensor[..., a + 5]
+        return s_tensor
+        # return tensor @ self.action_P @ self.action_M
